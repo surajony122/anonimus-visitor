@@ -16,7 +16,6 @@ import {
   Divider,
   TextField,
 } from "@shopify/polaris";
-import { Sparkles, Eye, ShoppingCart, ShieldCheck, UserCheck, Flame } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 
 export const loader = async () => {
@@ -141,7 +140,6 @@ export default function SimulatorRoute() {
       subtitle="Step-by-step interactive simulator showing the transition from anonymous browsing to identified customer"
       primaryAction={{
         content: "New Anonymous Visitor",
-        icon: Sparkles,
         onAction: resetVisitor,
       }}
     >
@@ -161,7 +159,6 @@ export default function SimulatorRoute() {
                 </Text>
                 <ButtonGroup>
                   <Button
-                    icon={Eye}
                     loading={loadingAction}
                     onClick={() =>
                       sendEvent("page_viewed", {
@@ -174,7 +171,6 @@ export default function SimulatorRoute() {
                   </Button>
 
                   <Button
-                    icon={Eye}
                     loading={loadingAction}
                     onClick={() =>
                       sendEvent("product_viewed", {
@@ -189,7 +185,6 @@ export default function SimulatorRoute() {
                   </Button>
 
                   <Button
-                    icon={Eye}
                     loading={loadingAction}
                     onClick={() =>
                       sendEvent("product_viewed", {
@@ -204,7 +199,6 @@ export default function SimulatorRoute() {
                   </Button>
 
                   <Button
-                    icon={ShoppingCart}
                     loading={loadingAction}
                     onClick={() =>
                       sendEvent("product_added_to_cart", {
@@ -218,7 +212,6 @@ export default function SimulatorRoute() {
                   </Button>
 
                   <Button
-                    icon={ShoppingCart}
                     loading={loadingAction}
                     onClick={() =>
                       sendEvent("checkout_started", {
@@ -252,14 +245,12 @@ export default function SimulatorRoute() {
                     <ButtonGroup>
                       <Button
                         variant="primary"
-                        icon={ShieldCheck}
                         loading={loadingAction}
                         onClick={() => handleIdentifyEmail("user_submitted")}
                       >
                         Identify (Newsletter / Form)
                       </Button>
                       <Button
-                        icon={UserCheck}
                         loading={loadingAction}
                         onClick={() => handleIdentifyEmail("google_oauth")}
                       >
