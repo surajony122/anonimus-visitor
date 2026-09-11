@@ -2,18 +2,28 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain, Authorization",
+  "Access-Control-Max-Age": "86400",
+};
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  return json({ status: "API Events Endpoint Ready" });
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: CORS_HEADERS,
+    });
+  }
+  return json({ status: "API Events Endpoint Ready" }, { headers: CORS_HEADERS });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
-      },
+      status: 204,
+      headers: CORS_HEADERS,
     });
   }
 
@@ -58,7 +68,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     } = body;
 
     if (!visitor_id || !event_type) {
-      return json({ error: "Missing visitor_id or event_type" }, { status: 400 });
+      return json({ error: "Missing visitor_id or event_type" }, { status: 400, headers: CORS_HEADERS });
     }
 
     const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
@@ -110,13 +120,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         status: visitor.status,
       },
       {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-        },
+        headers: CORS_HEADERS,
       }
     );
   } catch (error: any) {
     console.error("Error in api.events:", error);
-    return json({ error: "Internal Server Error" }, { status: 500 });
+    return json({ error: "Internal Server Error", details: error.message }, { status: 500, headers: CORS_HEADERS });
   }
 };

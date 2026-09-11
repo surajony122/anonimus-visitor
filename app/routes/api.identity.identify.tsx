@@ -1,16 +1,30 @@
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
 import { IdentityEngine } from "../services/identityEngine.server";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain, Authorization",
+  "Access-Control-Max-Age": "86400",
+};
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: CORS_HEADERS,
+    });
+  }
+  return json({ status: "API Identify Endpoint Ready" }, { headers: CORS_HEADERS });
+};
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, x-shopify-shop-domain",
-      },
+      status: 204,
+      headers: CORS_HEADERS,
     });
   }
 
@@ -51,13 +65,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         ...result,
       },
       {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-        },
+        headers: CORS_HEADERS,
       }
     );
   } catch (error: any) {
     console.error("Error in api.identity.identify:", error);
-    return json({ success: false, error: error.message }, { status: 400 });
+    return json({ success: false, error: error.message }, { status: 400, headers: CORS_HEADERS });
   }
 };
