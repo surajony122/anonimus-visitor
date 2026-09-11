@@ -1,0 +1,278 @@
+import { prisma } from '../db/client';
+import { normalizeEmail, normalizePhone, hashIdentityValue, encryptValue } from './normalizer';
+
+export type IdentityType = 'email' | 'phone' | 'shopify_customer' | 'google_account' | 'merchant_identifier';
+export type IdentitySource = 'user_submitted' | 'checkout' | 'shopify_customer' | 'google_oauth' | 'merchant_confirmed';
+
+export interface ResolveIdentityParams {
+  shopId: string;
+  visitorId: string;
+  type: IdentityType;
+  rawValue: string;
+  source: IdentitySource;
+  confidenceScore?: number;
+  metadata?: Record<string, any>;
+}
+
+export interface ResolveIdentityResult {
+  success: boolean;
+  visitorId: string;
+  identityId: string;
+  status: 'newly_identified' | 'already_identified' | 'merged';
+  confidenceScore: number;
+  matchedCustomer?: {
+    shopifyCustomerId: string;
+    emailReference?: string;
+  };
+}
+
+export class IdentityEngine {
+  /**
+   * Resolves or links an identity to a visitor.
+   * Deterministic matching only:
+   * - Verified email (100)
+   * - Verified phone (100)
+   * - Authenticated Shopify Customer (100)
+   * - Authenticated Google OAuth (100)
+   * - Merchant Confirmed ID (100)
+   *
+   * Rejects any attempt to use weak signals (IP, UA, device).
+   */
+  public static async identify(params: ResolveIdentityParams): Promise<ResolveIdentityResult> {
+    const { shopId, visitorId, type, rawValue, source, metadata } = params;
+
+    if (!shopId || !visitorId || !type || !rawValue) {
+      throw new Error('Missing required identity resolution parameters');
+    }
+
+    // 1. Normalize value according to type
+    let normalizedValue = '';
+    if (type === 'email') {
+      normalizedValue = normalizeEmail(rawValue);
+    } else if (type === 'phone') {
+      normalizedValue = normalizePhone(rawValue);
+    } else {
+      normalizedValue = rawValue.trim();
+    }
+
+    // Deterministic hash for privacy and unique matching
+    const valueHash = hashIdentityValue(normalizedValue);
+    const encryptedVal = encryptValue(normalizedValue);
+    const confidence = params.confidenceScore ?? 100;
+
+    // 2. Fetch visitor record (ensure it belongs to shopId)
+    const visitor = await prisma.visitor.findUnique({
+      where: {
+        shopId_visitorId: {
+          shopId,
+          visitorId,
+        },
+      },
+      include: {
+        identities: true,
+      },
+    });
+
+    if (!visitor) {
+      throw new Error(`Visitor not found for shop ${shopId} and visitorId ${visitorId}`);
+    }
+
+    // 3. Find if this identity already exists in this shop
+    let existingIdentity = await prisma.identity.findUnique({
+      where: {
+        shopId_identityType_identityValueHash: {
+          shopId,
+          identityType: type,
+          identityValueHash: valueHash,
+        },
+      },
+    });
+
+    let resultStatus: 'newly_identified' | 'already_identified' | 'merged' = 'newly_identified';
+    let targetIdentityId = '';
+
+    if (existingIdentity) {
+      targetIdentityId = existingIdentity.id;
+
+      // If the identity is already attached to this visitor
+      if (existingIdentity.visitorId === visitorId) {
+        resultStatus = 'already_identified';
+      } else {
+        // Safe Merge Logic: another visitor had this identity previously.
+        // We link both visitors under the legitimate identity graph.
+        resultStatus = 'merged';
+
+        // Create an identity link edge
+        await prisma.identityLink.create({
+          data: {
+            sourceIdentityId: existingIdentity.id,
+            targetIdentityId: existingIdentity.id,
+            relationship: 'verified_same_person',
+            confidenceScore: confidence,
+            source: source,
+          },
+        });
+
+        // Audit the merge event
+        await prisma.identityAuditLog.create({
+          data: {
+            shopId,
+            visitorId,
+            identityId: existingIdentity.id,
+            action: 'identity_merged',
+            source,
+            confidence,
+            metadata: JSON.stringify({
+              previousVisitorId: existingIdentity.visitorId,
+              currentVisitorId: visitorId,
+              type,
+              ...metadata,
+            }),
+          },
+        });
+      }
+    } else {
+      // Create new identity record
+      const createdIdentity = await prisma.identity.create({
+        data: {
+          shopId,
+          visitorId,
+          identityType: type,
+          identityValueHash: valueHash,
+          identityValueEncrypted: encryptedVal,
+          source,
+          confidenceScore: confidence,
+          verified: true,
+        },
+      });
+      targetIdentityId = createdIdentity.id;
+
+      // Audit the creation event
+      await prisma.identityAuditLog.create({
+        data: {
+          shopId,
+          visitorId,
+          identityId: createdIdentity.id,
+          action: 'identity_created',
+          source,
+          confidence,
+          metadata: JSON.stringify({ type, source, ...metadata }),
+        },
+      });
+    }
+
+    // 4. Update visitor status to 'identified' (all historical events remain connected to this visitorId)
+    await prisma.visitor.update({
+      where: {
+        shopId_visitorId: {
+          shopId,
+          visitorId,
+        },
+      },
+      data: {
+        status: 'identified',
+        lastSeenAt: new Date(),
+      },
+    });
+
+    // 5. Attempt Shopify Customer Matching if email/phone matches an existing Shopify Customer
+    let matchedCustomer: { shopifyCustomerId: string; emailReference?: string } | undefined;
+
+    if (type === 'email' || type === 'shopify_customer') {
+      const customer = await prisma.shopifyCustomer.findFirst({
+        where: {
+          shopId,
+          OR: [
+            { emailReference: normalizedValue },
+            { shopifyCustomerId: rawValue },
+          ],
+        },
+      });
+
+      if (customer) {
+        matchedCustomer = {
+          shopifyCustomerId: customer.shopifyCustomerId,
+          emailReference: customer.emailReference || undefined,
+        };
+
+        // Create or update visitor_customer_links
+        await prisma.visitorCustomerLink.upsert({
+          where: {
+            shopId_visitorId_shopifyCustomerId: {
+              shopId,
+              visitorId,
+              shopifyCustomerId: customer.shopifyCustomerId,
+            },
+          },
+          update: {
+            confidenceScore: 100,
+            matchMethod: type === 'email' ? 'email_exact' : 'authenticated_account',
+          },
+          create: {
+            shopId,
+            visitorId,
+            shopifyCustomerId: customer.shopifyCustomerId,
+            matchMethod: type === 'email' ? 'email_exact' : 'authenticated_account',
+            confidenceScore: 100,
+          },
+        });
+
+        // Audit customer match
+        await prisma.identityAuditLog.create({
+          data: {
+            shopId,
+            visitorId,
+            identityId: targetIdentityId,
+            action: 'customer_matched',
+            source: 'shopify_customer_match',
+            confidence: 100,
+            metadata: JSON.stringify({
+              shopifyCustomerId: customer.shopifyCustomerId,
+              method: type === 'email' ? 'email_exact' : 'authenticated_account',
+            }),
+          },
+        });
+      }
+    }
+
+    return {
+      success: true,
+      visitorId,
+      identityId: targetIdentityId,
+      status: resultStatus,
+      confidenceScore: confidence,
+      matchedCustomer,
+    };
+  }
+
+  /**
+   * Retrieves the full identity graph and audit trail for a visitor
+   */
+  public static async getVisitorIdentityGraph(shopId: string, visitorId: string) {
+    const identities = await prisma.identity.findMany({
+      where: { shopId, visitorId },
+      include: {
+        auditLogs: true,
+      },
+    });
+
+    const customerLinks = await prisma.visitorCustomerLink.findMany({
+      where: { shopId, visitorId },
+      include: {
+        customer: true,
+      },
+    });
+
+    const auditLogs = await prisma.identityAuditLog.findMany({
+      where: { shopId, visitorId },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    return {
+      visitorId,
+      identities,
+      customerLinks,
+      auditLogs,
+    };
+  }
+}

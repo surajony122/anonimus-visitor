@@ -1,0 +1,15 @@
+name = "nitro-web-pixel"
+type = "web_pixel_extension"
+runtime_context = "strict"
+uid = "e93b6c8f-cc8c-5af0-538a-866c3a4311a8857979de"
+
+[build]
+entry_point = "src/index.ts"
+
+[settings]
+type = "object"
+
+  [settings.fields.accountID]
+  name = "Account ID"
+  description = "Merchant Account Identifier"
+  type = "single_line_text_field"

@@ -1,0 +1,231 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Shopify App Session Storage (Standard for @shopify/shopify-app-remix)
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+model Shop {
+  id                    String    @id @default(uuid())
+  shopifyShopId         String?   @unique
+  shopDomain            String    @unique
+  accessTokenReference  String?
+  installedAt           DateTime  @default(now())
+  uninstalledAt         DateTime?
+  settings              String?   // JSON configuration string
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  visitors              Visitor[]
+  storefrontSessions    StorefrontSession[]
+  events                Event[]
+  identities            Identity[]
+  shopifyCustomers      ShopifyCustomer[]
+  visitorCustomerLinks  VisitorCustomerLink[]
+  identityAuditLogs     IdentityAuditLog[]
+  privacySettings       PrivacySetting?
+
+  @@index([shopDomain])
+}
+
+model Visitor {
+  id             String    @id @default(uuid())
+  shopId         String
+  visitorId      String    // UUID high-entropy identifier
+  status         String    @default("anonymous") // anonymous | identified | merged
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  firstSource    String?
+  lastSource     String?
+  deviceCategory String?
+  metadata       String?   // JSON
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  shop           Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sessions       StorefrontSession[]
+  events         Event[]
+  identities     Identity[]
+  customerLinks  VisitorCustomerLink[]
+  auditLogs      IdentityAuditLog[]
+
+  @@unique([shopId, visitorId])
+  @@index([shopId, visitorId])
+  @@index([shopId, status])
+  @@index([shopId, lastSeenAt])
+}
+
+model StorefrontSession {
+  id             String    @id @default(uuid())
+  shopId         String
+  visitorId      String
+  startedAt      DateTime  @default(now())
+  lastActivityAt DateTime  @default(now())
+  endedAt        DateTime?
+  landingPage    String?
+  referrer       String?
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  createdAt      DateTime  @default(now())
+
+  shop           Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitor        Visitor   @relation(fields: [shopId, visitorId], references: [shopId, visitorId], onDelete: Cascade)
+  events         Event[]
+
+  @@index([shopId, visitorId])
+  @@index([shopId, startedAt])
+}
+
+model Event {
+  id           String    @id @default(uuid())
+  shopId       String
+  visitorId    String
+  sessionId    String?
+  eventId      String    @unique @default(uuid())
+  eventType    String    // page_viewed, product_viewed, collection_viewed, search_submitted, cart_viewed, product_added_to_cart, checkout_started, checkout_completed
+  timestamp    DateTime  @default(now())
+  pageUrl      String?
+  productId    String?
+  variantId    String?
+  collectionId String?
+  cartId       String?
+  metadata     String?   // JSON payload
+  createdAt    DateTime  @default(now())
+
+  shop         Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitor      Visitor            @relation(fields: [shopId, visitorId], references: [shopId, visitorId], onDelete: Cascade)
+  session      StorefrontSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, visitorId])
+  @@index([shopId, timestamp])
+  @@index([eventType, timestamp])
+  @@index([visitorId, timestamp])
+}
+
+model Identity {
+  id                       String    @id @default(uuid())
+  shopId                   String
+  visitorId                String
+  identityType             String    // email, phone, shopify_customer, google_account, merchant_identifier
+  identityValueHash        String    // SHA-256 normalized hash
+  identityValueEncrypted   String?   // Encrypted raw value
+  source                   String    // user_submitted, checkout, shopify_customer, google_oauth, merchant_confirmed
+  confidenceScore          Int       @default(100)
+  verified                 Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  shop                     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitor                  Visitor   @relation(fields: [shopId, visitorId], references: [shopId, visitorId], onDelete: Cascade)
+  auditLogs                IdentityAuditLog[]
+
+  @@unique([shopId, identityType, identityValueHash])
+  @@index([shopId, identityValueHash])
+  @@index([shopId, visitorId])
+}
+
+model IdentityLink {
+  id               String    @id @default(uuid())
+  sourceIdentityId String
+  targetIdentityId String
+  relationship     String    // alias, verified_same_person
+  confidenceScore  Int       @default(100)
+  source           String
+  createdAt        DateTime  @default(now())
+
+  @@index([sourceIdentityId, targetIdentityId])
+}
+
+model ShopifyCustomer {
+  id                String    @id @default(uuid())
+  shopId            String
+  shopifyCustomerId String
+  emailReference    String?
+  phoneReference    String?
+  firstName         String?
+  lastName          String?
+  ordersCount       Int       @default(0)
+  totalSpent        Float     @default(0.0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  shop              Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitorLinks      VisitorCustomerLink[]
+
+  @@unique([shopId, shopifyCustomerId])
+  @@index([shopId, shopifyCustomerId])
+  @@index([shopId, emailReference])
+}
+
+model VisitorCustomerLink {
+  id                String          @id @default(uuid())
+  shopId            String
+  visitorId         String
+  shopifyCustomerId String
+  matchMethod       String          // email_exact, phone_exact, authenticated_account, checkout, merchant_confirmed
+  confidenceScore   Int             @default(100)
+  createdAt         DateTime        @default(now())
+
+  shop              Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitor           Visitor         @relation(fields: [shopId, visitorId], references: [shopId, visitorId], onDelete: Cascade)
+  customer          ShopifyCustomer @relation(fields: [shopId, shopifyCustomerId], references: [shopId, shopifyCustomerId], onDelete: Cascade)
+
+  @@unique([shopId, visitorId, shopifyCustomerId])
+  @@index([shopId, visitorId])
+  @@index([shopId, shopifyCustomerId])
+}
+
+model IdentityAuditLog {
+  id              String    @id @default(uuid())
+  shopId          String
+  visitorId       String
+  identityId      String?
+  action          String    // identity_created, identity_linked, identity_merged, identity_unlinked, customer_matched, identity_deleted
+  source          String
+  confidence      Int       @default(100)
+  metadata        String?   // JSON details
+  timestamp       DateTime  @default(now())
+
+  shop            Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  visitor         Visitor   @relation(fields: [shopId, visitorId], references: [shopId, visitorId], onDelete: Cascade)
+  identity        Identity? @relation(fields: [identityId], references: [id], onDelete: SetNull)
+
+  @@index([shopId, visitorId])
+  @@index([shopId, timestamp])
+}
+
+model PrivacySetting {
+  id                      String    @id @default(uuid())
+  shopId                  String    @unique
+  trackingEnabled         Boolean   @default(true)
+  analyticsEnabled        Boolean   @default(true)
+  marketingTrackingEnabled Boolean  @default(true)
+  retentionDays           Int       @default(90) // 30, 60, 90, 180, 365
+  consentModeRequired     Boolean   @default(false)
+  autoAnonymize           Boolean   @default(false)
+  updatedAt               DateTime  @updatedAt
+
+  shop                    Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}

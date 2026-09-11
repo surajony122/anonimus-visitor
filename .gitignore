@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build and Bundles
+build/
+dist/
+.cache/
+
+# Environment and Local Databases
+.env
+.env.local
+*.db
+*.db-journal
+dev.db
+
+# Shopify CLI state
+.shopify/
+.prisma/
+
+# OS Files
+.DS_Store
+Thumbs.db
