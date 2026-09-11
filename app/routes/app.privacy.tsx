@@ -16,7 +16,6 @@ import {
   TextField,
   Divider,
 } from "@shopify/polaris";
-import { Trash2, RefreshCw } from "lucide-react";
 import prisma from "../db.server";
 import { RetentionService } from "../services/retentionService.server";
 import { authenticate } from "../shopify.server";
@@ -237,7 +236,7 @@ export default function PrivacyCenterRoute() {
                   <Button variant="primary" onClick={handleSave}>
                     Save Settings
                   </Button>
-                  <Button icon={RefreshCw} onClick={handlePurge}>
+                  <Button onClick={handlePurge}>
                     Trigger Expired Retention Purge Now
                   </Button>
                 </InlineStack>
@@ -260,7 +259,7 @@ export default function PrivacyCenterRoute() {
                   autoComplete="off"
                 />
 
-                <Button tone="critical" fullWidth icon={Trash2} onClick={handleDelete} disabled={!deleteVisitorId}>
+                <Button tone="critical" fullWidth onClick={handleDelete} disabled={!deleteVisitorId}>
                   Permanently Delete Visitor Data
                 </Button>
               </BlockStack>

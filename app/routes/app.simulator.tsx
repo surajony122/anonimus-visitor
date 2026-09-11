@@ -299,10 +299,7 @@ export default function SimulatorRoute() {
                 <Divider />
 
                 <InlineStack align="space-between">
-                  <InlineStack gap="100">
-                    <Flame size={18} color="#d97706" />
-                    <Text variant="headingSm" as="h4">Intent Score:</Text>
-                  </InlineStack>
+                  <Text variant="headingSm" as="h4">Intent Score:</Text>
                   <Badge tone={intentScore > 80 ? "success" : intentScore > 60 ? "attention" : undefined}>
                     {`${intentScore}/100`}
                   </Badge>

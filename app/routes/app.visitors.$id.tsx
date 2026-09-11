@@ -16,7 +16,6 @@ import {
   Banner,
   List,
 } from "@shopify/polaris";
-import { Key, Flame } from "lucide-react";
 import prisma from "../db.server";
 import { calculateIntentScore } from "../services/intentEngine.server";
 import { authenticate } from "../shopify.server";
@@ -285,10 +284,7 @@ export default function VisitorDetailRoute() {
             <LegacyCard title="Behavioral Intent Score" sectioned>
               <BlockStack gap="300">
                 <InlineStack align="space-between">
-                  <InlineStack gap="100">
-                    <Flame size={20} color="#d97706" />
-                    <Text variant="headingMd" as="h3">{`${visitor.intentScore} / 100`}</Text>
-                  </InlineStack>
+                  <Text variant="headingMd" as="h3">{`${visitor.intentScore} / 100`}</Text>
                   <Badge tone={visitor.intentTier === "very_high" ? "success" : visitor.intentTier === "high" ? "attention" : undefined}>
                     {`${visitor.intentTier?.toUpperCase()} INTENT`}
                   </Badge>
@@ -318,10 +314,7 @@ export default function VisitorDetailRoute() {
 
             <LegacyCard title="Identity Graph" sectioned>
               <BlockStack gap="300">
-                <InlineStack gap="200">
-                  <Key size={18} color="#2563eb" />
-                  <Text variant="headingSm" as="h4">Resolved Identifiers</Text>
-                </InlineStack>
+                <Text variant="headingSm" as="h4">Resolved Identifiers</Text>
 
                 {identities.length === 0 ? (
                   <Text variant="bodySm" tone="subdued" as="p">
