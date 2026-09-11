@@ -6,7 +6,7 @@
     "dev": "shopify app dev",
     "dev:remix": "remix vite:dev",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
-    "start": "prisma db push --accept-data-loss && remix-serve ./build/server/index.js",
+    "start": "remix-serve ./build/server/index.js",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma db push"
