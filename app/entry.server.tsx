@@ -16,6 +16,27 @@ export default function handleRequest(
   loadContext: AppLoadContext
 ) {
   addDocumentResponseHeaders(request, responseHeaders);
+
+  // Guarantee frame-ancestors is allowed for Shopify Admin iframe embedding
+  const url = new URL(request.url);
+  const shop = url.searchParams.get("shop");
+  let frameAncestors = "https://*.myshopify.com https://admin.shopify.com";
+  if (shop) {
+    frameAncestors += ` https://${shop}`;
+  }
+
+  // Remove X-Frame-Options so it doesn't collide with CSP frame-ancestors
+  responseHeaders.delete("X-Frame-Options");
+  responseHeaders.delete("x-frame-options");
+
+  const existingCsp = responseHeaders.get("Content-Security-Policy");
+  if (!existingCsp || !existingCsp.includes("frame-ancestors")) {
+    responseHeaders.set(
+      "Content-Security-Policy",
+      `frame-ancestors ${frameAncestors};`
+    );
+  }
+
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? "") ? "onAllReady" : "onShellReady";
 
