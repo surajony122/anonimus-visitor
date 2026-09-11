@@ -22,11 +22,8 @@ import { RetentionService } from "../services/retentionService.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  let shopDomain = "ravistore-shop.myshopify.com";
-  try {
-    const { session } = await authenticate.admin(request);
-    shopDomain = session.shop;
-  } catch {}
+  const { session } = await authenticate.admin(request);
+  const shopDomain = session.shop;
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
@@ -45,11 +42,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  let shopDomain = "ravistore-shop.myshopify.com";
-  try {
-    const { session } = await authenticate.admin(request);
-    shopDomain = session.shop;
-  } catch {}
+  const { session } = await authenticate.admin(request);
+  const shopDomain = session.shop;
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },

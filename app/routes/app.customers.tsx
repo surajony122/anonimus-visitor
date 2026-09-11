@@ -17,11 +17,8 @@ import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  let shopDomain = "ravistore-shop.myshopify.com";
-  try {
-    const { session } = await authenticate.admin(request);
-    shopDomain = session.shop;
-  } catch {}
+  const { session } = await authenticate.admin(request);
+  const shopDomain = session.shop;
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },

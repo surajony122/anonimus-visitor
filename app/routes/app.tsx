@@ -10,11 +10,7 @@ import { authenticate } from "../shopify.server";
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  try {
-    await authenticate.admin(request);
-  } catch {
-    // Allows local preview / standalone mode
-  }
+  await authenticate.admin(request);
   return json({ apiKey: process.env.SHOPIFY_API_KEY || "" });
 };
 
