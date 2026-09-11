@@ -6,6 +6,11 @@ import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import { addDocumentResponseHeaders } from "./shopify.server";
 
+// Polyfill BigInt JSON serialization for Prisma Session userId
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 const ABORT_DELAY = 5_000;
 
 export default function handleRequest(

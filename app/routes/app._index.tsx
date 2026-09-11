@@ -24,57 +24,80 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
-  let shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-  });
+  let shop = null;
+  try {
+    shop = await prisma.shop.findUnique({
+      where: { shopDomain },
+    });
 
-  if (!shop) {
-    shop = await prisma.shop.create({
-      data: {
-        shopDomain,
-        shopifyShopId: "gid://shopify/Shop/1234567890",
-        installedAt: new Date(),
-        privacySettings: {
-          create: {
-            retentionDays: 90,
-            trackingEnabled: true,
-            analyticsEnabled: true,
+    if (!shop) {
+      shop = await prisma.shop.create({
+        data: {
+          shopDomain,
+          shopifyShopId: `gid://shopify/Shop/${session.shop}`,
+          installedAt: new Date(),
+          privacySettings: {
+            create: {
+              retentionDays: 90,
+              trackingEnabled: true,
+              analyticsEnabled: true,
+            },
           },
         },
-      },
-    });
+      });
+    }
+  } catch (err) {
+    console.error("DEBUG DB SHOP FIND/CREATE ERROR:", err);
   }
 
-  const shopId = shop.id;
+  const shopId = shop?.id || "default-shop";
 
-  const [
-    totalVisitors,
-    anonymousVisitors,
-    identifiedVisitors,
-    totalSessions,
-    totalEvents,
-    pageViews,
-    productViews,
-    addCartEvents,
-    checkoutEvents,
-    completedOrders,
-    allVisitors,
-  ] = await Promise.all([
-    prisma.visitor.count({ where: { shopId } }),
-    prisma.visitor.count({ where: { shopId, status: "anonymous" } }),
-    prisma.visitor.count({ where: { shopId, status: "identified" } }),
-    prisma.storefrontSession.count({ where: { shopId } }),
-    prisma.event.count({ where: { shopId } }),
-    prisma.event.count({ where: { shopId, eventType: "page_viewed" } }),
-    prisma.event.count({ where: { shopId, eventType: "product_viewed" } }),
-    prisma.event.count({ where: { shopId, eventType: "product_added_to_cart" } }),
-    prisma.event.count({ where: { shopId, eventType: "checkout_started" } }),
-    prisma.event.count({ where: { shopId, eventType: "checkout_completed" } }),
-    prisma.visitor.findMany({
-      where: { shopId },
-      include: { events: true, sessions: true },
-    }),
-  ]);
+  let totalVisitors = 0;
+  let anonymousVisitors = 0;
+  let identifiedVisitors = 0;
+  let totalSessions = 0;
+  let totalEvents = 0;
+  let pageViews = 0;
+  let productViews = 0;
+  let addCartEvents = 0;
+  let checkoutEvents = 0;
+  let completedOrders = 0;
+  let allVisitors: any[] = [];
+
+  if (shop) {
+    try {
+      [
+        totalVisitors,
+        anonymousVisitors,
+        identifiedVisitors,
+        totalSessions,
+        totalEvents,
+        pageViews,
+        productViews,
+        addCartEvents,
+        checkoutEvents,
+        completedOrders,
+        allVisitors,
+      ] = await Promise.all([
+        prisma.visitor.count({ where: { shopId } }),
+        prisma.visitor.count({ where: { shopId, status: "anonymous" } }),
+        prisma.visitor.count({ where: { shopId, status: "identified" } }),
+        prisma.storefrontSession.count({ where: { shopId } }),
+        prisma.event.count({ where: { shopId } }),
+        prisma.event.count({ where: { shopId, eventType: "page_viewed" } }),
+        prisma.event.count({ where: { shopId, eventType: "product_viewed" } }),
+        prisma.event.count({ where: { shopId, eventType: "product_added_to_cart" } }),
+        prisma.event.count({ where: { shopId, eventType: "checkout_started" } }),
+        prisma.event.count({ where: { shopId, eventType: "checkout_completed" } }),
+        prisma.visitor.findMany({
+          where: { shopId },
+          include: { events: true, sessions: true },
+        }),
+      ]);
+    } catch (err) {
+      console.error("DEBUG DB COUNTS ERROR:", err);
+    }
+  }
 
   const identificationRate =
     totalVisitors > 0 ? ((identifiedVisitors / totalVisitors) * 100).toFixed(1) : "0.0";

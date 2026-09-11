@@ -35,7 +35,27 @@ export default function App() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  const error = useRouteError() as any;
+  console.error("DEBUG APP ERROR:", error);
+
+  return (
+    <div style={{ padding: "30px", fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+      <div style={{ background: "#fff4f4", border: "1px solid #fecaca", borderRadius: "8px", padding: "20px", maxWidth: "800px" }}>
+        <h2 style={{ color: "#b91c1c", margin: "0 0 10px 0" }}>⚠️ Application Encountered an Error</h2>
+        <p style={{ color: "#374151", margin: "0 0 15px 0" }}>
+          <strong>Error Message:</strong> {error?.message || error?.statusText || "Unexpected Server Error"}
+        </p>
+        {error?.stack && (
+          <details style={{ marginTop: "10px" }}>
+            <summary style={{ cursor: "pointer", color: "#4b5563" }}>View technical details / stack trace</summary>
+            <pre style={{ background: "#1f2937", color: "#f9fafb", padding: "12px", borderRadius: "6px", overflowX: "auto", fontSize: "11px", marginTop: "8px" }}>
+              {error.stack}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export const headers: HeadersFunction = (headersArgs) => {

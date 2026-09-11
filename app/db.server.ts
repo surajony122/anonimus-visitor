@@ -1,5 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 
+// Polyfill BigInt JSON serialization
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 declare global {
   // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
