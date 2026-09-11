@@ -1,3 +1,9 @@
+databases:
+  - name: nitro-postgres-db
+    plan: free
+    databaseName: nitro_db
+    user: nitro_user
+
 services:
   - type: web
     name: nitro-shopify-visitor-intelligence
@@ -9,7 +15,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        value: "file:./dev.db"
+        fromDatabase:
+          name: nitro-postgres-db
+          property: connectionString
       - key: SCOPES
         value: "read_customers,read_orders,read_products"
       - key: ENCRYPTION_SECRET
