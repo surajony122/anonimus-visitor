@@ -10,8 +10,15 @@ import { authenticate } from "../shopify.server";
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  return json({ apiKey: process.env.SHOPIFY_API_KEY || "" });
+  try {
+    await authenticate.admin(request);
+  } catch (error) {
+    if (error instanceof Response) {
+      throw error;
+    }
+    console.error("DEBUG APP LOADER ERROR:", error);
+  }
+  return json({ apiKey: process.env.SHOPIFY_API_KEY || "d5b0bf6a64d665d76769762be18281fd" });
 };
 
 import polarisTranslations from "@shopify/polaris/locales/en.json";

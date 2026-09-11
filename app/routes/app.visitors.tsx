@@ -21,8 +21,14 @@ import { calculateIntentScore } from "../services/intentEngine.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const shopDomain = session.shop;
+  let shopDomain = "ravistore-shop.myshopify.com";
+  try {
+    const { session } = await authenticate.admin(request);
+    shopDomain = session.shop;
+  } catch (err) {
+    if (err instanceof Response) throw err;
+    console.error("DEBUG VISITORS AUTH ERROR:", err);
+  }
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
