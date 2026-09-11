@@ -17,25 +17,23 @@ export default function handleRequest(
 ) {
   addDocumentResponseHeaders(request, responseHeaders);
 
-  // Guarantee frame-ancestors is allowed for Shopify Admin iframe embedding
+  // Forcefully ensure frame-ancestors allows Shopify Admin embedding
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
-  let frameAncestors = "https://*.myshopify.com https://admin.shopify.com";
-  if (shop) {
-    frameAncestors += ` https://${shop}`;
-  }
+  const allowedAncestors = `https://*.myshopify.com https://admin.shopify.com ${shop ? `https://${shop}` : ""}`.trim();
+  const frameAncestorsDirective = `frame-ancestors ${allowedAncestors};`;
 
-  // Remove X-Frame-Options so it doesn't collide with CSP frame-ancestors
+  // Remove X-Frame-Options to prevent any legacy header conflicts
   responseHeaders.delete("X-Frame-Options");
   responseHeaders.delete("x-frame-options");
 
-  const existingCsp = responseHeaders.get("Content-Security-Policy");
-  if (!existingCsp || !existingCsp.includes("frame-ancestors")) {
-    responseHeaders.set(
-      "Content-Security-Policy",
-      `frame-ancestors ${frameAncestors};`
-    );
+  let csp = responseHeaders.get("Content-Security-Policy") || "";
+  if (csp.includes("frame-ancestors")) {
+    csp = csp.replace(/frame-ancestors[^;]+;?/g, frameAncestorsDirective);
+  } else {
+    csp = `${csp ? `${csp} ` : ""}${frameAncestorsDirective}`;
   }
+  responseHeaders.set("Content-Security-Policy", csp);
 
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? "") ? "onAllReady" : "onShellReady";
