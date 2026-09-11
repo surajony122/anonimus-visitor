@@ -3,7 +3,7 @@
 client_id = "d5b0bf6a64d665d76769762be18281fd"
 name = "Nitro Visitor Intelligence"
 handle = "nitro-visitor-intelligence"
-application_url = "http://localhost:3000"
+application_url = "https://nitro-shopify-visitor-intelligence.onrender.com"
 embedded = true
 
 [build]
@@ -15,7 +15,9 @@ scopes = "read_customers,read_orders,read_products"
 
 [auth]
 redirect_urls = [
-  "http://localhost:3000/api/auth/callback"
+  "https://nitro-shopify-visitor-intelligence.onrender.com/auth/callback",
+  "https://nitro-shopify-visitor-intelligence.onrender.com/auth/shopify/callback",
+  "https://nitro-shopify-visitor-intelligence.onrender.com/api/auth/callback"
 ]
 
 [webhooks]
