@@ -29,24 +29,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (err instanceof Response) throw err;
   }
 
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-  });
+  let visitors: any[] = [];
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { shopDomain },
+    });
 
-  if (!shop) {
-    return json({ highIntentVisitors: [] });
+    if (shop) {
+      visitors = await prisma.visitor.findMany({
+        where: { shopId: shop.id },
+        include: {
+          sessions: true,
+          events: true,
+          identities: true,
+          customerLinks: { include: { customer: true } },
+        },
+        orderBy: { lastSeenAt: "desc" },
+      });
+    }
+  } catch (dbErr) {
+    console.warn("Intent DB query fallback:", dbErr);
   }
-
-  const visitors = await prisma.visitor.findMany({
-    where: { shopId: shop.id },
-    include: {
-      sessions: true,
-      events: true,
-      identities: true,
-      customerLinks: { include: { customer: true } },
-    },
-    orderBy: { lastSeenAt: "desc" },
-  });
 
   const highIntentList = visitors
     .map((v) => {

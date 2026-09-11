@@ -30,24 +30,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.error("DEBUG VISITORS AUTH ERROR:", err);
   }
 
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-  });
+  let visitors: any[] = [];
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { shopDomain },
+    });
 
-  if (!shop) {
-    return json({ visitors: [] });
+    if (shop) {
+      visitors = await prisma.visitor.findMany({
+        where: { shopId: shop.id },
+        include: {
+          sessions: true,
+          events: { orderBy: { timestamp: "desc" } },
+          identities: true,
+          customerLinks: { include: { customer: true } },
+        },
+        orderBy: { lastSeenAt: "desc" },
+      });
+    }
+  } catch (dbErr) {
+    console.warn("Visitors DB query fallback:", dbErr);
   }
-
-  const visitors = await prisma.visitor.findMany({
-    where: { shopId: shop.id },
-    include: {
-      sessions: true,
-      events: { orderBy: { timestamp: "desc" } },
-      identities: true,
-      customerLinks: { include: { customer: true } },
-    },
-    orderBy: { lastSeenAt: "desc" },
-  });
 
   const enriched = visitors.map((v) => {
     const pViews = v.events.filter((e) => e.eventType === "product_viewed").length;

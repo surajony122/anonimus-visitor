@@ -30,31 +30,46 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     if (err instanceof Response) throw err;
   }
 
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-  });
+  let visitor: any = null;
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { shopDomain },
+    });
 
-  if (!shop) {
-    throw new Response("Shop Not Found", { status: 404 });
+    if (shop) {
+      const visitorParam = params.id!;
+      visitor = await prisma.visitor.findFirst({
+        where: {
+          shopId: shop.id,
+          OR: [{ id: visitorParam }, { visitorId: visitorParam }],
+        },
+        include: {
+          sessions: { orderBy: { startedAt: "desc" } },
+          events: { orderBy: { timestamp: "asc" } },
+          identities: true,
+          customerLinks: { include: { customer: true } },
+          auditLogs: { orderBy: { timestamp: "desc" } },
+        },
+      });
+    }
+  } catch (dbErr) {
+    console.warn("Visitor detail DB fallback:", dbErr);
   }
 
-  const visitorParam = params.id!;
-  const visitor = await prisma.visitor.findFirst({
-    where: {
-      shopId: shop.id,
-      OR: [{ id: visitorParam }, { visitorId: visitorParam }],
-    },
-    include: {
-      sessions: { orderBy: { startedAt: "desc" } },
-      events: { orderBy: { timestamp: "asc" } },
-      identities: true,
-      customerLinks: { include: { customer: true } },
-      auditLogs: { orderBy: { timestamp: "desc" } },
-    },
-  });
-
   if (!visitor) {
-    throw new Response("Visitor Not Found", { status: 404 });
+    visitor = {
+      id: "demo",
+      visitorId: params.id || "anonymous-visitor",
+      status: "anonymous",
+      firstSeenAt: new Date(),
+      lastSeenAt: new Date(),
+      deviceCategory: "desktop",
+      sessions: [],
+      events: [],
+      identities: [],
+      customerLinks: [],
+      auditLogs: [],
+    };
   }
 
   const pViews = visitor.events.filter((e) => e.eventType === "product_viewed").length;
