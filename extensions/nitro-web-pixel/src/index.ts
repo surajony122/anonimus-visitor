@@ -1,7 +1,7 @@
 import { register } from "@shopify/web-pixels-extension";
 
 register(({ analytics, browser, init, settings }) => {
-  const DEFAULT_ENDPOINT = "https://YOUR_APP_URL/api/events";
+  const DEFAULT_ENDPOINT = "https://nitro-shopify-visitor-intelligence.onrender.com/api/events";
   const STORAGE_KEY = "_nitro_vid";
 
   function generateUUID(): string {
