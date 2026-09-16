@@ -26,6 +26,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { Icon } from "../components/Icon";
 import { calculateIntentScore } from "../services/intentEngine.server";
+import { decryptValue } from "../services/normalizer.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopName = "Only Natural Gemstones";
@@ -218,6 +219,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           const phoneId = v.identities.find((i) => i.identityType === "phone");
           const customer = v.customerLinks[0]?.customer || null;
 
+          const rawDecryptedEmail = emailId?.identityValueEncrypted
+            ? decryptValue(emailId.identityValueEncrypted)
+            : customer?.emailReference || null;
+
+          const rawDecryptedPhone = phoneId?.identityValueEncrypted
+            ? decryptValue(phoneId.identityValueEncrypted)
+            : customer?.phoneReference || null;
+
           return {
             id: v.id,
             visitorId: v.visitorId,
@@ -238,8 +247,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             intentScore: intent.score,
             intentTier: intent.tier,
             intentBreakdown: intent.breakdown,
-            primaryEmail: emailId?.identityValueEncrypted || customer?.emailReference || null,
-            primaryPhone: phoneId?.identityValueEncrypted || customer?.phoneReference || null,
+            primaryEmail: rawDecryptedEmail,
+            primaryPhone: rawDecryptedPhone,
             identitySource: emailId?.source || phoneId?.source || (customer ? "shopify_sync" : "anonymous_session"),
             customer: customer
               ? {

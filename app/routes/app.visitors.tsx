@@ -18,6 +18,7 @@ import {
 } from "@shopify/polaris";
 import prisma from "../db.server";
 import { calculateIntentScore } from "../services/intentEngine.server";
+import { decryptValue } from "../services/normalizer.server";
 import { authenticate } from "../shopify.server";
 import { Icon } from "../components/Icon";
 
@@ -92,7 +93,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       sessionsCount: v.sessions.length || 1,
     });
 
-    const primaryEmail = v.identities.find((i) => i.identityType === "email")?.identityValueEncrypted || null;
+    const emailId = v.identities.find((i) => i.identityType === "email");
+    const primaryEmail = emailId?.identityValueEncrypted ? decryptValue(emailId.identityValueEncrypted) : null;
     const customer = v.customerLinks[0]?.customer || null;
 
     return {
