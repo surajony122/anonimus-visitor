@@ -45,6 +45,7 @@ model Shop {
   visitorCustomerLinks  VisitorCustomerLink[]
   identityAuditLogs     IdentityAuditLog[]
   privacySettings       PrivacySetting?
+  webhookEndpoints      WebhookEndpoint[]
 
   @@index([shopDomain])
 }
@@ -228,4 +229,37 @@ model PrivacySetting {
   updatedAt               DateTime  @updatedAt
 
   shop                    Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model WebhookEndpoint {
+  id               String               @id @default(uuid())
+  shopId           String
+  name             String
+  url              String
+  secret           String?
+  triggerOn        String               // high_intent_reached, cart_abandoned, identity_resolved, all
+  isActive         Boolean              @default(true)
+  lastTriggeredAt  DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  shop             Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  deliveryLogs     WebhookDeliveryLog[]
+
+  @@index([shopId, isActive])
+}
+
+model WebhookDeliveryLog {
+  id                String          @id @default(uuid())
+  webhookEndpointId String
+  eventTrigger      String
+  payload           String          // JSON payload string
+  responseStatus    Int?
+  responseBody      String?
+  success           Boolean         @default(true)
+  timestamp         DateTime        @default(now())
+
+  webhookEndpoint   WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+
+  @@index([webhookEndpointId, timestamp])
 }

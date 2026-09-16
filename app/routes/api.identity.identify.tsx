@@ -2,6 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
 import { IdentityEngine } from "../services/identityEngine.server";
+import { WebhookDispatcher } from "../services/webhookDispatcher.server";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -58,6 +59,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       confidenceScore: confidence_score ?? 100,
       metadata,
     });
+
+    // Background webhook trigger for identity resolution
+    WebhookDispatcher.dispatch(shop.id, "identity_resolved", {
+      event: "identity_resolved",
+      shopDomain,
+      visitorId: visitor_id,
+      status: "identified",
+      intentScore: 80,
+      intentTier: "high",
+      timestamp: new Date().toISOString(),
+      customer: {
+        email: type === "email" ? value : undefined,
+        phone: type === "phone" ? value : undefined,
+      },
+    }).catch(() => {});
 
     return json(
       {

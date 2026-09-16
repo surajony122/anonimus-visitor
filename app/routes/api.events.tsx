@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
+import { processVisitorIntentAndTriggers } from "../services/intentEngine.server";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -111,6 +112,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         metadata: metadata ? JSON.stringify(metadata) : null,
       },
     });
+
+    // Background intent evaluation and webhook trigger dispatching
+    processVisitorIntentAndTriggers(shopId, visitor_id, shopDomain).catch(() => {});
 
     return json(
       {

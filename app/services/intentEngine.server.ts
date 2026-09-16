@@ -1,3 +1,6 @@
+﻿import prisma from "../db.server";
+import { WebhookDispatcher } from "./webhookDispatcher.server";
+
 export interface IntentSignals {
   pageViewsCount: number;
   productViewsCount: number;
@@ -36,6 +39,8 @@ export interface IntentConfig {
   checkoutStartedWeight: number;
   checkoutCompletedWeight: number;
   sessionDepthWeight: number;
+  highIntentThreshold: number;
+  veryHighIntentThreshold: number;
 }
 
 export const DEFAULT_INTENT_CONFIG: IntentConfig = {
@@ -49,6 +54,8 @@ export const DEFAULT_INTENT_CONFIG: IntentConfig = {
   checkoutStartedWeight: 30,
   checkoutCompletedWeight: 50,
   sessionDepthWeight: 10,
+  highIntentThreshold: 61,
+  veryHighIntentThreshold: 81,
 };
 
 export function calculateIntentScore(
@@ -68,33 +75,36 @@ export function calculateIntentScore(
   const sessions = signals.sessionsCount || 1;
 
   let productEngagement =
-    pViews * config.productViewWeight +
-    repeatViews * config.repeatProductViewWeight +
-    cViews * config.collectionViewWeight +
-    searches * config.searchWeight;
+    pViews * (config.productViewWeight ?? 5) +
+    repeatViews * (config.repeatProductViewWeight ?? 10) +
+    cViews * (config.collectionViewWeight ?? 2) +
+    searches * (config.searchWeight ?? 4);
   productEngagement = Math.min(35, productEngagement);
 
   let cartActivity =
-    addToCart * config.addToCartWeight +
-    cartViews * config.cartViewWeight +
-    (cartVal >= 100 ? config.highCartValueBonus : 0);
+    addToCart * (config.addToCartWeight ?? 25) +
+    cartViews * (config.cartViewWeight ?? 15) +
+    (cartVal >= 100 ? (config.highCartValueBonus ?? 15) : 0);
   cartActivity = Math.min(35, cartActivity);
 
   let checkoutProgress =
-    checkoutsStarted * config.checkoutStartedWeight +
-    checkoutsCompleted * config.checkoutCompletedWeight;
+    checkoutsStarted * (config.checkoutStartedWeight ?? 30) +
+    checkoutsCompleted * (config.checkoutCompletedWeight ?? 50);
   checkoutProgress = Math.min(40, checkoutProgress);
 
-  let sessionDepth = (duration > 3 ? config.sessionDepthWeight : 0) + (sessions > 1 ? 5 : 0);
+  let sessionDepth = (duration > 3 ? (config.sessionDepthWeight ?? 10) : 0) + (sessions > 1 ? 5 : 0);
   sessionDepth = Math.min(15, sessionDepth);
 
   const rawScore = productEngagement + cartActivity + checkoutProgress + sessionDepth;
   const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
 
+  const highThreshold = config.highIntentThreshold ?? 61;
+  const veryHighThreshold = config.veryHighIntentThreshold ?? 81;
+
   let tier: "low" | "medium" | "high" | "very_high" = "low";
-  if (finalScore >= 81) {
+  if (finalScore >= veryHighThreshold) {
     tier = "very_high";
-  } else if (finalScore >= 61) {
+  } else if (finalScore >= highThreshold) {
     tier = "high";
   } else if (finalScore >= 31) {
     tier = "medium";
@@ -112,4 +122,105 @@ export function calculateIntentScore(
       sessionDepth,
     },
   };
+}
+
+export async function processVisitorIntentAndTriggers(shopId: string, visitorId: string, shopDomain: string) {
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      include: {
+        visitors: {
+          where: { visitorId },
+          include: {
+            events: { orderBy: { timestamp: "desc" }, take: 50 },
+            customerLinks: { include: { customer: true } },
+            identities: true,
+          },
+        },
+      },
+    });
+
+    if (!shop || !shop.visitors[0]) return;
+
+    const visitor = shop.visitors[0];
+    const events = visitor.events;
+
+    let config = DEFAULT_INTENT_CONFIG;
+    if (shop.settings) {
+      try {
+        const parsed = JSON.parse(shop.settings);
+        if (parsed.intentConfig) config = { ...DEFAULT_INTENT_CONFIG, ...parsed.intentConfig };
+      } catch {}
+    }
+
+    const pViews = events.filter((e) => e.eventType === "product_viewed").length;
+    const uniqueProductIds = new Set(
+      events.filter((e) => e.eventType === "product_viewed" && e.productId).map((e) => e.productId!)
+    );
+    const repeatViews = Math.max(0, pViews - uniqueProductIds.size);
+    const cViews = events.filter((e) => e.eventType === "collection_viewed").length;
+    const searches = events.filter((e) => e.eventType === "search_submitted").length;
+    const addToCart = events.filter((e) => e.eventType === "product_added_to_cart").length;
+    const cartViews = events.filter((e) => e.eventType === "cart_viewed").length;
+    const checkouts = events.filter((e) => e.eventType === "checkout_started").length;
+    const checkoutsCompleted = events.filter((e) => e.eventType === "checkout_completed").length;
+
+    let cartVal = 0;
+    events.forEach((e) => {
+      if (e.metadata) {
+        try {
+          const meta = JSON.parse(e.metadata);
+          if (meta.cartValue || meta.price) cartVal = Math.max(cartVal, Number(meta.cartValue || meta.price || 0));
+        } catch {}
+      }
+    });
+
+    const intent = calculateIntentScore(
+      {
+        productViewsCount: pViews,
+        repeatProductViews: repeatViews,
+        collectionViewsCount: cViews,
+        searchesCount: searches,
+        addedToCartCount: addToCart,
+        cartViewedCount: cartViews,
+        cartValue: cartVal,
+        checkoutStartedCount: checkouts,
+        checkoutCompletedCount: checkoutsCompleted,
+      },
+      config
+    );
+
+    // If intent is High or Very High, trigger outbound webhook
+    if (intent.tier === "high" || intent.tier === "very_high") {
+      const customer = visitor.customerLinks[0]?.customer;
+      WebhookDispatcher.dispatch(shopId, "high_intent_reached", {
+        event: "high_intent_reached",
+        shopDomain,
+        visitorId,
+        status: visitor.status,
+        intentScore: intent.score,
+        intentTier: intent.tier,
+        timestamp: new Date().toISOString(),
+        customer: customer
+          ? {
+              email: customer.emailReference || undefined,
+              phone: customer.phoneReference || undefined,
+              firstName: customer.firstName || undefined,
+              lastName: customer.lastName || undefined,
+              shopifyCustomerId: customer.shopifyCustomerId,
+            }
+          : undefined,
+        recentEvents: events.slice(0, 5).map((e) => ({
+          eventType: e.eventType,
+          timestamp: e.timestamp.toISOString(),
+          productId: e.productId,
+          pageUrl: e.pageUrl,
+        })),
+      });
+    }
+
+    return intent;
+  } catch (err) {
+    console.error("Error processing visitor intent triggers:", err);
+  }
 }

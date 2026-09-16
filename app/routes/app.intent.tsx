@@ -1,7 +1,7 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+﻿import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
-import React from "react";
+import { useActionData, useLoaderData, useNavigate, useSubmit, useNavigation } from "@remix-run/react";
+import React, { useState } from "react";
 import {
   Page,
   Layout,
@@ -12,12 +12,14 @@ import {
   BlockStack,
   InlineStack,
   Divider,
-  List,
   DataTable,
   Button,
+  TextField,
+  Banner,
+  Select,
 } from "@shopify/polaris";
 import prisma from "../db.server";
-import { calculateIntentScore } from "../services/intentEngine.server";
+import { calculateIntentScore, DEFAULT_INTENT_CONFIG, type IntentConfig } from "../services/intentEngine.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -30,12 +32,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   let visitors: any[] = [];
+  let config: IntentConfig = DEFAULT_INTENT_CONFIG;
+
   try {
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
     });
 
     if (shop) {
+      if (shop.settings) {
+        try {
+          const parsed = JSON.parse(shop.settings);
+          if (parsed.intentConfig) config = { ...DEFAULT_INTENT_CONFIG, ...parsed.intentConfig };
+        } catch {}
+      }
+
       visitors = await prisma.visitor.findMany({
         where: { shopId: shop.id },
         include: {
@@ -79,18 +90,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
       });
 
-      const intent = calculateIntentScore({
-        productViewsCount: pViews,
-        repeatProductViews: repeatViews,
-        collectionViewsCount: cViews,
-        searchesCount: searches,
-        addedToCartCount: addToCart,
-        cartViewedCount: cartViews,
-        cartValue: cartVal,
-        checkoutStartedCount: checkouts,
-        checkoutCompletedCount: checkoutsCompleted,
-        sessionsCount: v.sessions.length || 1,
-      });
+      const intent = calculateIntentScore(
+        {
+          productViewsCount: pViews,
+          repeatProductViews: repeatViews,
+          collectionViewsCount: cViews,
+          searchesCount: searches,
+          addedToCartCount: addToCart,
+          cartViewedCount: cartViews,
+          cartValue: cartVal,
+          checkoutStartedCount: checkouts,
+          checkoutCompletedCount: checkoutsCompleted,
+          sessionsCount: v.sessions.length || 1,
+        },
+        config
+      );
 
       const primaryEmail = v.identities.find((i) => i.identityType === "email")?.identityValueEncrypted || null;
       const customer = v.customerLinks[0]?.customer || null;
@@ -108,34 +122,153 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         intentTier: intent.tier,
         primaryEmail,
         customer,
+        lastSeenAt: v.lastSeenAt ? new Date(v.lastSeenAt).toLocaleString() : "Recently",
       };
     })
     .filter((v) => v.intentTier === "high" || v.intentTier === "very_high");
 
-  return json({ highIntentVisitors: highIntentList });
+  return json({ highIntentVisitors: highIntentList, config });
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  let shopDomain = "ravistore-shop.myshopify.com";
+  try {
+    const { session } = await authenticate.admin(request);
+    shopDomain = session.shop;
+  } catch (err) {
+    if (err instanceof Response) throw err;
+  }
+
+  try {
+    let shop = await prisma.shop.findUnique({
+      where: { shopDomain },
+    });
+
+    if (!shop) {
+      shop = await prisma.shop.create({
+        data: { shopDomain },
+      });
+    }
+
+    const formData = await request.formData();
+    const actionType = formData.get("actionType");
+
+    if (actionType === "save_weights") {
+      const productViewWeight = Number(formData.get("productViewWeight") || 5);
+      const repeatProductViewWeight = Number(formData.get("repeatProductViewWeight") || 10);
+      const addToCartWeight = Number(formData.get("addToCartWeight") || 25);
+      const checkoutStartedWeight = Number(formData.get("checkoutStartedWeight") || 30);
+      const highCartValueBonus = Number(formData.get("highCartValueBonus") || 15);
+      const highIntentThreshold = Number(formData.get("highIntentThreshold") || 61);
+
+      let currentSettings: any = {};
+      if (shop.settings) {
+        try {
+          currentSettings = JSON.parse(shop.settings);
+        } catch {}
+      }
+
+      currentSettings.intentConfig = {
+        ...DEFAULT_INTENT_CONFIG,
+        productViewWeight,
+        repeatProductViewWeight,
+        addToCartWeight,
+        checkoutStartedWeight,
+        highCartValueBonus,
+        highIntentThreshold,
+      };
+
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { settings: JSON.stringify(currentSettings) },
+      });
+
+      return json({ success: true, message: "Intent scoring rules & weights updated successfully!" });
+    }
+  } catch (err: any) {
+    console.error("Intent action error:", err);
+    return json({ error: err.message || "Failed to update weights" }, { status: 500 });
+  }
+
+  return json({});
 };
 
 export default function IntentAnalyticsRoute() {
-  const { highIntentVisitors } = useLoaderData<typeof loader>();
+  const { highIntentVisitors, config } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
+  const submit = useSubmit();
+  const nav = useNavigation();
+  const isSubmitting = nav.state === "submitting";
 
-  const rows = highIntentVisitors.map((v: any) => {
+  const [pViewWeight, setPViewWeight] = useState(String(config.productViewWeight ?? 5));
+  const [repeatWeight, setRepeatWeight] = useState(String(config.repeatProductViewWeight ?? 10));
+  const [atcWeight, setAtcWeight] = useState(String(config.addToCartWeight ?? 25));
+  const [checkoutWeight, setCheckoutWeight] = useState(String(config.checkoutStartedWeight ?? 30));
+  const [cartBonus, setCartBonus] = useState(String(config.highCartValueBonus ?? 15));
+  const [threshold, setThreshold] = useState(String(config.highIntentThreshold ?? 61));
+
+  const [filter, setFilter] = useState("all");
+
+  const handleSaveWeights = () => {
+    const fd = new FormData();
+    fd.append("actionType", "save_weights");
+    fd.append("productViewWeight", pViewWeight);
+    fd.append("repeatProductViewWeight", repeatWeight);
+    fd.append("addToCartWeight", atcWeight);
+    fd.append("checkoutStartedWeight", checkoutWeight);
+    fd.append("highCartValueBonus", cartBonus);
+    fd.append("highIntentThreshold", threshold);
+    submit(fd, { method: "POST" });
+  };
+
+  const handleExportCSV = () => {
+    const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Products Viewed", "Cart Items", "Cart Value", "Last Seen"];
+    const rows = highIntentVisitors.map((v: any) => [
+      v.visitorId,
+      v.status,
+      v.intentScore,
+      v.intentTier,
+      v.productsViewedCount,
+      v.cartEventsCount,
+      `$${v.cartValue}`,
+      v.lastSeenAt,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r: any[]) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `nitro_high_intent_leads_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const filteredVisitors = highIntentVisitors.filter((v: any) => {
+    if (filter === "cart") return v.cartEventsCount > 0;
+    if (filter === "identified") return v.status === "identified";
+    return true;
+  });
+
+  const rows = filteredVisitors.map((v: any) => {
     return [
-      <BlockStack key={`hiv_${v.id}`} gap="100">
+      <BlockStack key={`hiv_${v.id}`} gap="050">
         <Text variant="bodyMd" fontWeight="bold" as="span">
           {v.status === "identified"
             ? v.customer?.firstName || v.primaryEmail || "Identified Customer"
             : `Anonymous #${v.visitorId.substring(0, 8)}`}
         </Text>
         <Text variant="bodySm" tone="subdued" as="span">
-          {`Status: ${v.status}`}
+          {`Status: ${v.status} | Last seen: ${v.lastSeenAt}`}
         </Text>
       </BlockStack>,
-      <Badge tone="success">{`${v.intentScore}/100`}</Badge>,
+      <Badge key={`score_${v.id}`} tone={v.intentTier === "very_high" ? "success" : "attention"}>
+        {`${v.intentScore}/100 (${v.intentTier?.toUpperCase()})`}
+      </Badge>,
       `${v.productsViewedCount} products (${v.uniqueProductsCount} unique)`,
       v.cartEventsCount > 0 ? `${v.cartEventsCount} items ($${v.cartValue})` : "0 items",
       `${v.sessionsCount} sessions`,
-      <Button size="slim" onClick={() => navigate(`/app/visitors/${v.visitorId}`)}>
+      <Button key={`btn_${v.id}`} size="slim" onClick={() => navigate(`/app/visitors/${v.visitorId}`)}>
         Inspect Intent Journey
       </Button>,
     ];
@@ -147,84 +280,145 @@ export default function IntentAnalyticsRoute() {
       subtitle="Autonomous behavioral intent scoring based on first-party storefront engagement signals"
     >
       <BlockStack gap="400">
+        {actionData && (actionData as any).message && (
+          <Banner tone="success">
+            <p>{(actionData as any).message}</p>
+          </Banner>
+        )}
+
         <Layout>
           <Layout.Section>
-            <LegacyCard title="Behavioral Intent Scoring Rules & Weights" sectioned>
-              <BlockStack gap="300">
+            <LegacyCard title="Customizable Intent Scoring Weights" sectioned>
+              <BlockStack gap="400">
                 <Text variant="bodyMd" as="p">
-                  The Intent Engine aggregates micro-conversions and repeated interactions to calculate a real-time propensity score (0–100):
+                  Customize the score points awarded for micro-conversions to calibrate lead propensity for your store catalog:
                 </Text>
-                <Grid>
-                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                    <BlockStack gap="200">
-                      <Text variant="headingXs" as="h4">Product Engagement Factors</Text>
-                      <List type="bullet">
-                        <List.Item>Single Product View: <strong>+5 pts</strong></List.Item>
-                        <List.Item>Repeated View on Same SKU: <strong>+10 pts</strong></List.Item>
-                        <List.Item>Collection Browsing: <strong>+2 pts</strong></List.Item>
-                        <List.Item>Storefront Search Query: <strong>+4 pts</strong></List.Item>
-                      </List>
-                    </BlockStack>
-                  </Grid.Cell>
 
-                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 6, xl: 6 }}>
-                    <BlockStack gap="200">
-                      <Text variant="headingXs" as="h4">High-Conversion Factors</Text>
-                      <List type="bullet">
-                        <List.Item>Product Added to Cart: <strong>+25 pts</strong></List.Item>
-                        <List.Item>Cart Page / Drawer Viewed: <strong>+15 pts</strong></List.Item>
-                        <List.Item>High Cart Value ($100+): <strong>+15 pts</strong></List.Item>
-                        <List.Item>Checkout Flow Initiated: <strong>+30 pts</strong></List.Item>
-                      </List>
-                    </BlockStack>
+                <Grid>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                    <TextField
+                      label="Product View (pts)"
+                      type="number"
+                      value={pViewWeight}
+                      onChange={setPViewWeight}
+                      autoComplete="off"
+                    />
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                    <TextField
+                      label="Repeat SKU View (pts)"
+                      type="number"
+                      value={repeatWeight}
+                      onChange={setRepeatWeight}
+                      autoComplete="off"
+                    />
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                    <TextField
+                      label="Add to Cart (pts)"
+                      type="number"
+                      value={atcWeight}
+                      onChange={setAtcWeight}
+                      autoComplete="off"
+                    />
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                    <TextField
+                      label="Start Checkout (pts)"
+                      type="number"
+                      value={checkoutWeight}
+                      onChange={setCheckoutWeight}
+                      autoComplete="off"
+                    />
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                    <TextField
+                      label="High Cart ($100+) Bonus"
+                      type="number"
+                      value={cartBonus}
+                      onChange={setCartBonus}
+                      autoComplete="off"
+                    />
+                  </Grid.Cell>
+                  <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
+                    <TextField
+                      label="High Intent Threshold"
+                      type="number"
+                      value={threshold}
+                      onChange={setThreshold}
+                      autoComplete="off"
+                    />
                   </Grid.Cell>
                 </Grid>
+
+                <InlineStack align="end">
+                  <Button variant="primary" onClick={handleSaveWeights} loading={isSubmitting}>
+                    Save Scoring Configuration
+                  </Button>
+                </InlineStack>
               </BlockStack>
             </LegacyCard>
           </Layout.Section>
 
           <Layout.Section variant="oneThird">
-            <LegacyCard title="Intent Tiers" sectioned>
+            <LegacyCard title="Propensity Tiers" sectioned>
               <BlockStack gap="200">
                 <div>
                   <InlineStack align="space-between">
-                    <Badge tone="success">Very High Intent (81-100)</Badge>
+                    <Badge tone="success">Very High (81-100)</Badge>
                   </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">Ready to buy, checkout initiated</Text>
+                  <Text variant="bodySm" tone="subdued" as="p">Ready to buy &bull; checkout begun</Text>
                 </div>
                 <Divider />
                 <div>
                   <InlineStack align="space-between">
-                    <Badge tone="attention">High Intent (61-80)</Badge>
+                    <Badge tone="attention">High ({threshold}+)</Badge>
                   </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">Multiple repeat product views or cart</Text>
+                  <Text variant="bodySm" tone="subdued" as="p">Repeat views &bull; cart active</Text>
                 </div>
                 <Divider />
                 <div>
                   <InlineStack align="space-between">
-                    <Badge tone="info">Medium Intent (31-60)</Badge>
+                    <Badge tone="info">Medium (31-60)</Badge>
                   </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">Browsing categories and catalog</Text>
-                </div>
-                <Divider />
-                <div>
-                  <InlineStack align="space-between">
-                    <Badge>Low Intent (0-30)</Badge>
-                  </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">Casual single-page visitors</Text>
+                  <Text variant="bodySm" tone="subdued" as="p">Browsing categories</Text>
                 </div>
               </BlockStack>
             </LegacyCard>
           </Layout.Section>
         </Layout>
 
-        <LegacyCard title={`High & Very High Intent Visitors (${highIntentVisitors.length})`} sectioned>
+        <LegacyCard
+          title={`High Intent Leads Queue (${filteredVisitors.length})`}
+          sectioned
+          actions={[
+            {
+              content: "Export Leads to CSV",
+              onAction: handleExportCSV,
+              disabled: filteredVisitors.length === 0,
+            },
+          ]}
+        >
           <BlockStack gap="300">
-            <Text variant="bodySm" tone="subdued" as="p">
-              Prioritized list of anonymous and identified shoppers showing strong conversion intent.
-            </Text>
-            {highIntentVisitors.length === 0 ? (
-              <Text variant="bodyMd" tone="subdued" as="p">No high-intent visitors detected yet.</Text>
+            <InlineStack align="space-between">
+              <Text variant="bodySm" tone="subdued" as="p">
+                Visitors showing high conversion propensity, ranked by real-time intent score.
+              </Text>
+              <Select
+                label=""
+                labelHidden
+                options={[
+                  { label: "All High Intent", value: "all" },
+                  { label: "With Items in Cart", value: "cart" },
+                  { label: "Identified Only", value: "identified" },
+                ]}
+                value={filter}
+                onChange={setFilter}
+              />
+            </InlineStack>
+
+            {filteredVisitors.length === 0 ? (
+              <Text variant="bodyMd" tone="subdued" as="p">No high-intent visitors matching this filter yet.</Text>
             ) : (
               <DataTable
                 columnContentTypes={["text", "text", "text", "text", "text", "text"]}

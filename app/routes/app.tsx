@@ -33,6 +33,7 @@ export default function App() {
         <Link to="/app/visitors">Storefront Visitors</Link>
         <Link to="/app/customers">Shopify Customers</Link>
         <Link to="/app/intent">Intent Intelligence</Link>
+        <Link to="/app/integrations">Marketing Webhooks</Link>
         <Link to="/app/privacy">Privacy Center</Link>
         <Link to="/app/simulator">Interactive Simulator</Link>
       </NavMenu>
