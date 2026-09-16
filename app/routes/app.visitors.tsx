@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
-import React, { useState } from "react";
+import { useLoaderData, useNavigate, useRevalidator } from "@remix-run/react";
+import React, { useState, useEffect } from "react";
 import {
   Page,
   LegacyCard,
@@ -127,9 +127,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function VisitorsList() {
   const { visitors } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const isRefreshing = revalidator.state === "loading";
   const [statusFilter, setStatusFilter] = useState("all");
   const [intentFilter, setIntentFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("just now");
+
+  const handleManualRefresh = () => {
+    revalidator.revalidate();
+    setLastRefreshedAt(new Date().toLocaleTimeString());
+  };
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+      setLastRefreshedAt(new Date().toLocaleTimeString());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, revalidator]);
 
   let filtered = visitors;
   if (statusFilter !== "all") {
@@ -197,11 +215,21 @@ export default function VisitorsList() {
           <span>Storefront Visitors</span>
         </InlineStack>
       }
-      subtitle="Track anonymous shoppers, campaign parameters, and automatically stitched customer journeys"
       primaryAction={{
         content: "Simulate Traffic",
         onAction: () => navigate("/app/simulator"),
       }}
+      secondaryActions={[
+        {
+          content: autoRefresh ? "🟢 Auto-Refresh (5s)" : "⏸️ Auto-Refresh: Off",
+          onAction: () => setAutoRefresh(!autoRefresh),
+        },
+        {
+          content: isRefreshing ? "Refreshing..." : "🔄 Refresh Now",
+          loading: isRefreshing,
+          onAction: handleManualRefresh,
+        },
+      ]}
     >
       <BlockStack gap="400">
         <LegacyCard sectioned>

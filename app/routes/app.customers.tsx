@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
-import React from "react";
+import { useLoaderData, useNavigate, useRevalidator } from "@remix-run/react";
+import React, { useState, useEffect } from "react";
 import {
   Page,
   LegacyCard,
@@ -75,6 +75,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function CustomersRoute() {
   const { customers } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const isRefreshing = revalidator.state === "loading";
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("just now");
+
+  const handleManualRefresh = () => {
+    revalidator.revalidate();
+    setLastRefreshedAt(new Date().toLocaleTimeString());
+  };
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+      setLastRefreshedAt(new Date().toLocaleTimeString());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, revalidator]);
 
   const rows = customers.map((c: any) => {
     const linkedVisitor = c.visitorLinks?.[0]?.visitor;
@@ -114,6 +132,17 @@ export default function CustomersRoute() {
     <Page
       title="Shopify Customer Intelligence"
       subtitle="Shopify customer profiles mapped to real storefront browsing behavior & historical journeys"
+      primaryAction={{
+        content: isRefreshing ? "Refreshing..." : "🔄 Refresh Data",
+        loading: isRefreshing,
+        onAction: handleManualRefresh,
+      }}
+      secondaryActions={[
+        {
+          content: autoRefresh ? "🟢 Live Auto-Refresh (5s)" : "⏸️ Auto-Refresh: Off",
+          onAction: () => setAutoRefresh(!autoRefresh),
+        },
+      ]}
     >
       <BlockStack gap="400">
         <LegacyCard>

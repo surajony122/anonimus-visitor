@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useActionData, useLoaderData, useNavigation, useSubmit, useNavigate } from "@remix-run/react";
-import React, { useState } from "react";
+import { useActionData, useLoaderData, useNavigation, useSubmit, useNavigate, useRevalidator } from "@remix-run/react";
+import React, { useState, useEffect } from "react";
 import {
   Page,
   Text,
@@ -401,12 +401,30 @@ export default function AppDashboard() {
   const submit = useSubmit();
   const nav = useNavigation();
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
   const isGenerating = nav.state === "submitting";
+  const isRefreshing = revalidator.state === "loading";
 
   const [copied, setCopied] = useState(false);
   const [visitorFilter, setVisitorFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("just now");
+
+  const handleManualRefresh = () => {
+    revalidator.revalidate();
+    setLastRefreshedAt(new Date().toLocaleTimeString());
+  };
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      revalidator.revalidate();
+      setLastRefreshedAt(new Date().toLocaleTimeString());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, revalidator]);
 
   // Standalone Universal Tracker Snippet
   const universalTrackerSnippet = `<!-- Nitro Commerce Intelligent Storefront & Device Tracker -->
@@ -615,7 +633,49 @@ export default function AppDashboard() {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "8px", flex: "none" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", flex: "none" }}>
+            <button
+              className="nitro-btn-secondary"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                borderColor: autoRefresh ? "#0F8A5F" : "#e3e2dc",
+                color: autoRefresh ? "#0F8A5F" : "#75756d",
+                background: autoRefresh ? "#eefbf6" : "#ffffff",
+              }}
+              title="Toggle automatic real-time stream"
+            >
+              <span style={{
+                display: "inline-block",
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                background: autoRefresh ? "#0F8A5F" : "#8b8b84",
+                boxShadow: autoRefresh ? "0 0 8px #0F8A5F" : "none",
+                animation: autoRefresh ? "pulse 1.8s infinite" : "none",
+              }} />
+              {autoRefresh ? "Live Auto-Refresh (5s)" : "Auto-Refresh: Off"}
+            </button>
+
+            <button
+              className="nitro-btn-secondary"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              title={`Last refreshed at ${lastRefreshedAt}`}
+            >
+              <span style={{
+                display: "inline-block",
+                transform: isRefreshing ? "rotate(360deg)" : "none",
+                transition: "transform 0.6s ease",
+              }}>
+                🔄
+              </span>
+              {isRefreshing ? "Refreshing..." : "Refresh Data"}
+            </button>
+
             <button className="nitro-btn-secondary" onClick={handleExportCSV} disabled={visitorsData.length === 0}>
               Export CSV
             </button>
