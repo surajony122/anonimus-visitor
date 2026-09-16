@@ -4,23 +4,12 @@ import { useActionData, useLoaderData, useNavigation, useSubmit, useNavigate } f
 import React, { useState } from "react";
 import {
   Page,
-  Layout,
-  Card,
   Text,
   Badge,
   Banner,
-  Button,
-  InlineStack,
-  BlockStack,
-  Divider,
-  DataTable,
-  List,
-  ProgressBar,
-  Grid,
   Modal,
   TextField,
   ButtonGroup,
-  EmptyState,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -419,7 +408,7 @@ export default function AppDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
 
-  // Full-featured universal tracker with localStorage, device extraction, and input interceptor
+  // Standalone Universal Tracker Snippet
   const universalTrackerSnippet = `<!-- Nitro Commerce Intelligent Storefront & Device Tracker -->
 <script>
 (function() {
@@ -428,7 +417,6 @@ export default function AppDashboard() {
   var STORAGE_KEY_VID = "_nitro_vid";
   var STORAGE_KEY_PROFILE = "_nitro_profile";
 
-  // 1. Persistent 1st-Party Visitor ID in localStorage & cookie
   function getVisitorId() {
     try {
       var vid = localStorage.getItem(STORAGE_KEY_VID);
@@ -442,7 +430,6 @@ export default function AppDashboard() {
     }
   }
 
-  // 2. Hardware, OS, Browser & Screen Intelligence
   function getDeviceProfile() {
     var ua = navigator.userAgent || "";
     var browser = "Chrome";
@@ -470,7 +457,6 @@ export default function AppDashboard() {
     };
   }
 
-  // 3. Instant Zero-Friction Identity Stitcher
   function identifyVisitor(type, value, source) {
     if (!value || typeof value !== "string" || !value.trim()) return;
     var vid = getVisitorId();
@@ -488,7 +474,7 @@ export default function AppDashboard() {
     }).catch(function() {});
   }
 
-  // 4. Auto-Harvest from Campaign URLs (?email=... &phone=...)
+  // URL Auto-Capture
   try {
     if (window.location.search) {
       var params = new URLSearchParams(window.location.search);
@@ -499,14 +485,14 @@ export default function AppDashboard() {
     }
   } catch(e) {}
 
-  // 5. Auto-Detect Shopify Logged-in Customer ID
+  // Shopify Logged-in Customer ID
   try {
     if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.customerId) {
       identifyVisitor("shopify_customer", String(window.ShopifyAnalytics.meta.page.customerId), "shopify_session");
     }
   } catch(e) {}
 
-  // 6. Passive Input Keystroke & Autofill Interception (Captures before submission)
+  // Input & Autofill Sniffer
   document.addEventListener("input", function(e) {
     var el = e.target;
     if (!el || !el.value) return;
@@ -519,7 +505,6 @@ export default function AppDashboard() {
     }
   }, true);
 
-  // 7. Event Dispatcher with Rich Device Profile
   window.nitroTrack = function(eventType, eventData) {
     var vid = getVisitorId();
     var dev = getDeviceProfile();
@@ -537,7 +522,6 @@ export default function AppDashboard() {
     }).catch(function() {});
   };
 
-  // Auto-record initial page view
   window.nitroTrack("page_viewed", { title: document.title });
 })();
 </script>`;
@@ -600,139 +584,48 @@ export default function AppDashboard() {
     );
   }
 
-  const visitorTableRows = filteredVisitors.map((v: any) => {
-    const isIdentified = v.status === "identified";
-    const displayName = v.customer?.firstName
-      ? `${v.customer.firstName} ${v.customer.lastName || ""}`
-      : isIdentified && v.primaryEmail
-      ? v.primaryEmail
-      : `Anonymous #${v.visitorId.substring(0, 8)}`;
-
-    let tierTone: "success" | "attention" | "info" | undefined = undefined;
-    if (v.intentTier === "very_high") tierTone = "success";
-    else if (v.intentTier === "high") tierTone = "attention";
-    else if (v.intentTier === "medium") tierTone = "info";
-
-    return [
-      <BlockStack gap="050" key={`lead_${v.id}`}>
-        <InlineStack gap="150" align="center">
-          <Icon name={isIdentified ? "ic-user-check" : "ic-user"} size={16} color={isIdentified ? "var(--ok)" : "var(--faint)"} />
-          <Button variant="plain" onClick={() => setSelectedVisitor(v)}>
-            <strong>{displayName}</strong>
-          </Button>
-        </InlineStack>
-        <span className="mono" style={{ fontSize: "11px", color: "var(--faint)" }}>
-          {v.visitorId.substring(0, 16)}...
-        </span>
-      </BlockStack>,
-      <BlockStack gap="050" key={`device_${v.id}`}>
-        <InlineStack gap="100" align="center">
-          <Icon name={v.deviceCategory === "mobile" ? "ic-phone" : "ic-server"} size={14} color="var(--accent)" />
-          <span style={{ fontWeight: 600, fontSize: "12px" }}>{`${v.browser} on ${v.os}`}</span>
-        </InlineStack>
-        <span className="mono" style={{ fontSize: "11px", color: "var(--muted)" }}>
-          {`${v.screenResolution} • ${v.timezone}`}
-        </span>
-      </BlockStack>,
-      <BlockStack gap="050" key={`contact_${v.id}`}>
-        {v.primaryEmail ? (
-          <InlineStack gap="050" align="center">
-            <Icon name="ic-mail" size={13} color="var(--ok)" />
-            <span style={{ fontWeight: 600, fontSize: "12px" }}>{v.primaryEmail}</span>
-          </InlineStack>
-        ) : (
-          <span style={{ color: "var(--muted)", fontSize: "12px" }}>Email: —</span>
-        )}
-        {v.primaryPhone ? (
-          <InlineStack gap="050" align="center">
-            <Icon name="ic-phone" size={13} color="var(--accent)" />
-            <span style={{ fontSize: "11.5px" }}>{v.primaryPhone}</span>
-          </InlineStack>
-        ) : null}
-      </BlockStack>,
-      <BlockStack gap="050" key={`intent_${v.id}`}>
-        <InlineStack gap="100" align="center">
-          <Badge tone={tierTone}>{`${v.intentScore}/100`}</Badge>
-          <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>{v.intentTier.replace("_", " ")}</span>
-        </InlineStack>
-        <div style={{ width: "80px", marginTop: "4px" }}>
-          <ProgressBar progress={v.intentScore} size="small" tone={v.intentScore >= 61 ? "success" : "highlight"} />
-        </div>
-      </BlockStack>,
-      <span key={`source_${v.id}`} className={`ong-badge ${isIdentified ? "ong-badge-success" : ""}`}>
-        {isIdentified ? v.identitySource.replace(/_/g, " ").toUpperCase() : "ANONYMOUS"}
-      </span>,
-      v.cartEventsCount > 0 ? (
-        <span key={`cart_${v.id}`} style={{ fontWeight: 600, color: "var(--accent)" }}>
-          {`${v.cartEventsCount} items ($${v.cartValue})`}
-        </span>
-      ) : (
-        <span key={`cart_${v.id}`} style={{ color: "var(--muted)" }}>—</span>
-      ),
-      <span key={`seen_${v.id}`} style={{ fontSize: "12px", color: "var(--muted)" }}>
-        {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-      </span>,
-      <Button
-        key={`btn_${v.id}`}
-        size="slim"
-        variant="secondary"
-        onClick={() => setSelectedVisitor(v)}
-      >
-        <InlineStack gap="100" align="center">
-          <Icon name="ic-activity" size={13} />
-          <span>Inspect Lore</span>
-        </InlineStack>
-      </Button>,
-    ];
-  });
-
-  const orderRows = recentOrders.map((order) => [
-    <span key={order.id} className="mono" style={{ fontWeight: 600 }}>{order.name}</span>,
-    order.customer?.displayName || "Guest Shopper",
-    order.customer?.email || "—",
-    <span key={`${order.id}-tot`} className="mono">{`${currency} ${Number(order.totalPriceSet?.shopMoney?.amount || 0).toFixed(2)}`}</span>,
-    <Badge tone={order.displayFinancialStatus === "PAID" ? "success" : "attention"} key={order.id}>
-      {order.displayFinancialStatus || "AUTHORIZED"}
-    </Badge>,
-    new Date(order.createdAt).toLocaleDateString(),
-  ]);
-
   const conversionPct = totalTrackedVisitors > 0
     ? Math.round((checkoutInitiatorsCount / totalTrackedVisitors) * 100)
     : 0;
 
   return (
-    <Page
-      fullWidth
-      title={
-        <InlineStack gap="200" align="center">
-          <Icon name="ic-diamond" size={26} color="var(--accent)" />
-          <span>{shopName}</span>
-          <span className="ong-badge ong-badge-accent" style={{ marginLeft: "8px", verticalAlign: "middle" }}>
-            DEVICE & IDENTITY INTELLIGENCE
-          </span>
-        </InlineStack>
-      }
-      subtitle={`Connected Storefront: ${shopDomain}`}
-      primaryAction={{
-        content: "Simulate Live Traffic",
-        onAction: () => navigate("/app/simulator"),
-      }}
-      secondaryActions={[
-        {
-          content: "Export Leads (CSV)",
-          icon: () => <Icon name="ic-download" size={16} />,
-          onAction: handleExportCSV,
-          disabled: visitorsData.length === 0,
-        },
-        {
-          content: isGenerating ? "Creating Profile..." : "Add Test Lead",
-          loading: isGenerating,
-          onAction: () => submit({ actionType: "generate_sample_customer" }, { method: "post" }),
-        },
-      ]}
-    >
-      <BlockStack gap="500">
+    <Page fullWidth>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", paddingBottom: "32px" }}>
+        
+        {/* Standalone Style Top Header */}
+        <div style={{
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: "24px",
+          padding: "20px 26px 16px",
+          borderBottom: "1px solid #e3e2dc",
+          background: "#fbfbf9",
+          borderRadius: "10px",
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: "10.5px", letterSpacing: "0.09em", textTransform: "uppercase", color: "#8b8b84", fontWeight: 600 }}>
+              INTENT INTELLIGENCE · STOREFRONT TRACKING
+            </div>
+            <h1 style={{ margin: "4px 0 3px", fontSize: "22px", fontWeight: 600, letterSpacing: "-0.02em", color: "#16161a" }}>
+              {shopName}
+            </h1>
+            <p style={{ margin: 0, color: "#6b6b64", fontSize: "12.5px" }}>
+              Connected Storefront: <span className="mono" style={{ color: "#16161a", fontWeight: 500 }}>{shopDomain}</span> · Live Browser &amp; LocalStorage Vault
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", flex: "none" }}>
+            <button className="nitro-btn-secondary" onClick={handleExportCSV} disabled={visitorsData.length === 0}>
+              Export CSV
+            </button>
+            <button className="nitro-btn-primary" onClick={() => navigate("/app/simulator")}>
+              Simulate traffic
+            </button>
+          </div>
+        </div>
+
+        {/* Action Banner if Customer Added */}
         {(actionData as any)?.success && (
           <Banner title="Customer Profile Synchronized!" tone="success" onDismiss={() => {}}>
             <p>
@@ -741,288 +634,413 @@ export default function AppDashboard() {
           </Banner>
         )}
 
-        {/* Zero-Friction Storage & Device Lore Card */}
-        <Card>
-          <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="center">
-              <InlineStack gap="200" align="center">
-                <Icon name={isPixelActive ? "ic-check-circle" : "ic-alert-triangle"} size={20} color={isPixelActive ? "var(--ok)" : "var(--warn)"} />
-                <Text variant="headingMd" as="h2">Zero-Friction Device, LocalStorage & Autofill Capture</Text>
-                <span className={`ong-badge ${isPixelActive ? "ong-badge-success" : "ong-badge-warn"}`}>
-                  {isPixelActive ? "LIVE & INGESTING" : "AWAITING STOREFRONT PIXEL"}
-                </span>
-              </InlineStack>
-              <Text variant="bodySm" tone="subdued" as="span">
-                {lastEventTimestamp ? `Latest event: ${new Date(lastEventTimestamp).toLocaleTimeString()}` : "No events recorded yet"}
-              </Text>
-            </InlineStack>
+        {/* 4-KPI Metric Grid (Standalone Style) */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px" }}>
+          <div className="nitro-card" style={{ padding: "13px 15px" }}>
+            <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Tracked Shoppers</div>
+            <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{totalTrackedVisitors}</div>
+              <div style={{ fontSize: "11.5px", color: "#0F8A5F", fontWeight: 600 }}>+14% vs 7d</div>
+            </div>
+            <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>
+              {anonymousVisitorsCount} anon · <strong style={{ color: "#0F8A5F" }}>{identifiedVisitorsCount} identified</strong>
+            </div>
+          </div>
 
-            <Divider />
+          <div className="nitro-card" style={{ padding: "13px 15px" }}>
+            <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Product Browsers</div>
+            <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{productViewersCount}</div>
+              <div style={{ fontSize: "11.5px", color: "#5B45D6", fontWeight: 600 }}>
+                {totalTrackedVisitors > 0 ? `${Math.round((productViewersCount / totalTrackedVisitors) * 100)}%` : "0%"} rate
+              </div>
+            </div>
+            <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>Viewed 1+ jewelry/catalog SKU</div>
+          </div>
 
-            <Grid>
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="100">
-                  <InlineStack gap="100" align="center">
-                    <Icon name="ic-server" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">1. LocalStorage Device Vault</Text>
-                  </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    Stores persistent 1st-party token (<span className="mono">_nitro_vid</span>) + hardware info (Browser, OS, Screen, Timezone) in the user's browser for 365-day recognition.
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
+          <div className="nitro-card" style={{ padding: "13px 15px" }}>
+            <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Cart Additions</div>
+            <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{cartAddersCount}</div>
+              <div style={{ fontSize: "11.5px", color: "#b4551f", fontWeight: 600 }}>
+                {totalTrackedVisitors > 0 ? `${Math.round((cartAddersCount / totalTrackedVisitors) * 100)}%` : "0%"} intent
+              </div>
+            </div>
+            <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>Active items identified in cart</div>
+          </div>
 
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="100">
-                  <InlineStack gap="100" align="center">
-                    <Icon name="ic-edit" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">2. Keystroke & Autofill Sniffer</Text>
-                  </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    When the user types or browser autofills email/phone into newsletter/footer/search inputs, it captures the value before form submission.
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
+          <div className="nitro-card" style={{ padding: "13px 15px" }}>
+            <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Lead Conversion Rate</div>
+            <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{`${conversionPct}%`}</div>
+              <div style={{ fontSize: "11.5px", color: "#0F8A5F", fontWeight: 600 }}>{`${checkoutInitiatorsCount} checkouts`}</div>
+            </div>
+            <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>Reached checkout step 1 or paid</div>
+          </div>
+        </div>
 
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="100">
-                  <InlineStack gap="100" align="center">
-                    <Icon name="ic-tag" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">3. URL Campaign Auto-Stitch</Text>
-                  </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    Links with <span className="mono">?email=...&phone=...</span> instantly resolve the visitor's anonymous session without requiring any login.
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
+        {/* 2-Column Split: High Intent Queue & Conversion Funnel */}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.45fr) minmax(0, 1fr)", gap: "16px", alignItems: "start" }}>
+          
+          {/* Act Now · High Intent Queue */}
+          <section className="nitro-card" style={{ overflow: "hidden" }}>
+            <div style={{ padding: "13px 15px", borderBottom: "1px solid #ecebe5", display: "flex", alignItems: "baseline", justifyContent: "space-between", background: "#fbfbf9" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#0F8A5F", boxShadow: "0 0 0 3px rgba(15,138,95,0.18)" }}></span>
+                <h2 style={{ margin: 0, fontSize: "13.5px", fontWeight: 600, color: "#16161a" }}>Act now · high intent queue</h2>
+              </div>
+              <span className="ong-badge ong-badge-accent">{`${filteredVisitors.filter(v => v.intentScore >= 60).length} High Priority`}</span>
+            </div>
 
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                <BlockStack gap="100">
-                  <InlineStack gap="100" align="center">
-                    <Icon name="ic-send" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">4. Outbound Marketing Trigger</Text>
-                  </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    Instantly dispatches webhooks to Klaviyo, WhatsApp, or Zapier when high intent is detected with the captured contact and cart items.
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-            </Grid>
+            <div>
+              {filteredVisitors.slice(0, 5).map((v) => {
+                const isIdentified = v.status === "identified";
+                const displayName = v.customer?.firstName
+                  ? `${v.customer.firstName} ${v.customer.lastName || ""}`
+                  : isIdentified && v.primaryEmail
+                  ? v.primaryEmail
+                  : `Anonymous #${v.visitorId.substring(0, 8)}`;
 
-            <InlineStack gap="200">
-              <Button variant="primary" onClick={handleCopyTracker}>
-                <InlineStack gap="100">
-                  <Icon name={copied ? "ic-check" : "ic-copy"} size={14} />
-                  <span>{copied ? "Tracker Snippet Copied!" : "Copy Universal Tracker Snippet"}</span>
-                </InlineStack>
-              </Button>
-              <Button
-                url={`https://${shopDomain}/admin/settings/customer_events`}
-                target="_blank"
-              >
-                <InlineStack gap="100">
-                  <Icon name="ic-external-link" size={14} />
-                  <span>Open Shopify Customer Events &rarr;</span>
-                </InlineStack>
-              </Button>
-              <Button onClick={() => navigate("/app/integrations")}>
-                <InlineStack gap="100">
-                  <Icon name="ic-server" size={14} />
-                  <span>Configure Outbound Webhooks</span>
-                </InlineStack>
-              </Button>
-            </InlineStack>
-          </BlockStack>
-        </Card>
+                return (
+                  <div
+                    key={v.id}
+                    onClick={() => setSelectedVisitor(v)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      padding: "11px 15px",
+                      borderBottom: "1px solid #f1f0ea",
+                      cursor: "pointer",
+                      transition: "background 0.12s ease",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#faf9f6")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                        <span style={{
+                          width: "7px",
+                          height: "7px",
+                          borderRadius: "50%",
+                          background: isIdentified ? "#0F8A5F" : v.intentScore >= 60 ? "#b4551f" : "#96968e",
+                        }}></span>
+                        <span style={{ fontWeight: 600, fontSize: "12.5px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {displayName}
+                        </span>
+                      </div>
+                      <div style={{ marginTop: "3px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "10.5px", color: "#96968e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.visitorId.substring(0, 14)}... · {v.browser} on {v.os}
+                      </div>
+                    </div>
 
-        {/* 4-Metric Full-Width KPI Grid */}
-        <Grid>
-          <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="100">
-                <InlineStack gap="100" align="start">
-                  <Icon name="ic-users" size={16} color="var(--accent)" />
-                  <Text variant="bodySm" tone="subdued" as="span">Tracked Visitors</Text>
-                </InlineStack>
-                <Text variant="heading2xl" as="p">{String(totalTrackedVisitors)}</Text>
-                <InlineStack gap="100">
-                  <span className="ong-badge">{`${anonymousVisitorsCount} Anonymous`}</span>
-                  <span className="ong-badge ong-badge-success">{`${identifiedVisitorsCount} Identified`}</span>
-                </InlineStack>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
+                    <div style={{ flex: "none", textAlign: "right" }}>
+                      <span className="ong-badge ong-badge-accent" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+                        {`${v.intentScore}/100`}
+                      </span>
+                      <div style={{ marginTop: "3px", fontSize: "11px", color: "#8b8b84", whiteSpace: "nowrap" }}>
+                        {v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart ($${v.cartValue})` : "Browsing catalog"}
+                      </div>
+                    </div>
 
-          <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="100">
-                <InlineStack gap="100" align="start">
-                  <Icon name="ic-diamond" size={16} color="var(--accent)" />
-                  <Text variant="bodySm" tone="subdued" as="span">Product Browsers</Text>
-                </InlineStack>
-                <Text variant="heading2xl" as="p">{String(productViewersCount)}</Text>
-                <Text variant="bodySm" tone="subdued" as="p">
-                  {totalTrackedVisitors > 0 ? `${Math.round((productViewersCount / totalTrackedVisitors) * 100)}% catalog engagement` : "0% engagement"}
-                </Text>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
+                    <div style={{ flex: "none", fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "#8b8b84", whiteSpace: "nowrap" }}>
+                      {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
 
-          <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="100">
-                <InlineStack gap="100" align="start">
-                  <Icon name="ic-cart" size={16} color="var(--warn)" />
-                  <Text variant="bodySm" tone="subdued" as="span">Cart Additions</Text>
-                </InlineStack>
-                <Text variant="heading2xl" as="p">{String(cartAddersCount)}</Text>
-                <Text variant="bodySm" tone="subdued" as="p">Active cart items discovered</Text>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
-
-          <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="100">
-                <InlineStack gap="100" align="start">
-                  <Icon name="ic-trending-up" size={16} color="var(--ok)" />
-                  <Text variant="bodySm" tone="subdued" as="span">Conversion Rate</Text>
-                </InlineStack>
-                <Text variant="heading2xl" as="p">{`${conversionPct}%`}</Text>
-                <Text variant="bodySm" tone="subdued" as="p">{`${checkoutInitiatorsCount} checkouts reached`}</Text>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
-        </Grid>
-
-        {/* Full-Width Real-Time Visitor Lore Table */}
-        <Card>
-          <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="center">
-              <InlineStack gap="150" align="center">
-                <Icon name="ic-users" size={20} color="var(--accent)" />
-                <Text variant="headingMd" as="h2">Live Visitor Device & Identity Lore Table</Text>
-                <span className="ong-badge ong-badge-accent">{`${filteredVisitors.length} Active Records`}</span>
-              </InlineStack>
-
-              <InlineStack gap="200" align="center">
-                <ButtonGroup>
-                  <Button pressed={visitorFilter === "all"} onClick={() => setVisitorFilter("all")}>
-                    All ({visitorsData.length})
-                  </Button>
-                  <Button pressed={visitorFilter === "high_intent"} onClick={() => setVisitorFilter("high_intent")}>
-                    High Intent (60+)
-                  </Button>
-                  <Button pressed={visitorFilter === "cart"} onClick={() => setVisitorFilter("cart")}>
-                    In Cart
-                  </Button>
-                  <Button pressed={visitorFilter === "identified"} onClick={() => setVisitorFilter("identified")}>
-                    Identified Leads
-                  </Button>
-                </ButtonGroup>
-
-                <div style={{ width: "240px" }}>
-                  <TextField
-                    label=""
-                    labelHidden
-                    placeholder="Search visitor, email, OS, browser..."
-                    value={searchQuery}
-                    onChange={(val) => setSearchQuery(val)}
-                    autoComplete="off"
-                    clearButton
-                    onClearButtonClick={() => setSearchQuery("")}
-                  />
+          {/* Right Column: Funnel & Zero-Friction Tracking Card */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            
+            {/* Conversion & Drop-off */}
+            <section className="nitro-card" style={{ padding: "14px 16px" }}>
+              <h2 style={{ margin: "0 0 12px", fontSize: "13px", fontWeight: 600, color: "#16161a" }}>Conversion &amp; Drop-off Funnel</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: "11px" }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "11.5px" }}>
+                    <span style={{ color: "#45453f", fontWeight: 500 }}>1. Storefront Visitors</span>
+                    <span className="mono" style={{ color: "#16161a" }}>{totalTrackedVisitors} · 100%</span>
+                  </div>
+                  <div style={{ marginTop: "5px", height: "7px", borderRadius: "4px", background: "#f0efe8", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: "100%", background: "#5B45D6", borderRadius: "4px" }}></div>
+                  </div>
                 </div>
-              </InlineStack>
-            </InlineStack>
 
-            <Divider />
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "11.5px" }}>
+                    <span style={{ color: "#45453f", fontWeight: 500 }}>2. Product Catalog Viewers</span>
+                    <span className="mono" style={{ color: "#16161a" }}>
+                      {productViewersCount} · {totalTrackedVisitors > 0 ? `${Math.round((productViewersCount / totalTrackedVisitors) * 100)}%` : "0%"}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: "5px", height: "7px", borderRadius: "4px", background: "#f0efe8", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${totalTrackedVisitors > 0 ? (productViewersCount / totalTrackedVisitors) * 100 : 0}%`, background: "#5B45D6", borderRadius: "4px" }}></div>
+                  </div>
+                  {totalTrackedVisitors > productViewersCount && (
+                    <div style={{ marginTop: "4px", fontSize: "10.5px", color: "#b4551f" }}>
+                      {`${Math.round(((totalTrackedVisitors - productViewersCount) / totalTrackedVisitors) * 100)}% bounce on landing`}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "11.5px" }}>
+                    <span style={{ color: "#45453f", fontWeight: 500 }}>3. Active Cart Additions</span>
+                    <span className="mono" style={{ color: "#16161a" }}>
+                      {cartAddersCount} · {totalTrackedVisitors > 0 ? `${Math.round((cartAddersCount / totalTrackedVisitors) * 100)}%` : "0%"}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: "5px", height: "7px", borderRadius: "4px", background: "#f0efe8", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${totalTrackedVisitors > 0 ? (cartAddersCount / totalTrackedVisitors) * 100 : 0}%`, background: "#b4551f", borderRadius: "4px" }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "11.5px" }}>
+                    <span style={{ color: "#45453f", fontWeight: 500 }}>4. Checkout Reached</span>
+                    <span className="mono" style={{ color: "#16161a" }}>
+                      {checkoutInitiatorsCount} · {totalTrackedVisitors > 0 ? `${Math.round((checkoutInitiatorsCount / totalTrackedVisitors) * 100)}%` : "0%"}
+                    </span>
+                  </div>
+                  <div style={{ marginTop: "5px", height: "7px", borderRadius: "4px", background: "#f0efe8", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${totalTrackedVisitors > 0 ? (checkoutInitiatorsCount / totalTrackedVisitors) * 100 : 0}%`, background: "#0F8A5F", borderRadius: "4px" }}></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Zero-Friction Tracking Setup Card */}
+            <section className="nitro-card" style={{ padding: "14px 16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h2 style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#16161a" }}>Zero-Friction Tracking Vault</h2>
+                <span className={`ong-badge ${isPixelActive ? "ong-badge-success" : "ong-badge-warn"}`}>
+                  {isPixelActive ? "PIXEL LIVE" : "AWAITING PIXEL"}
+                </span>
+              </div>
+              <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#6b6b64" }}>
+                Auto-extracts emails/phones from campaign URLs, intercepts input autofill, and stores device profiles in localStorage.
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button className="nitro-btn-primary" style={{ flex: 1 }} onClick={handleCopyTracker}>
+                  {copied ? "Tracker Copied!" : "Copy Tracker Snippet"}
+                </button>
+                <button
+                  className="nitro-btn-secondary"
+                  onClick={() => window.open(`https://${shopDomain}/admin/settings/customer_events`, "_blank")}
+                >
+                  Shopify Events →
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        {/* Live Visitor Intelligence & Stitched Leads Table (Full-Width High-Density) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "8px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+            <ButtonGroup>
+              <button
+                className={visitorFilter === "all" ? "nitro-btn-primary" : "nitro-btn-secondary"}
+                onClick={() => setVisitorFilter("all")}
+              >
+                All ({visitorsData.length})
+              </button>
+              <button
+                className={visitorFilter === "high_intent" ? "nitro-btn-primary" : "nitro-btn-secondary"}
+                onClick={() => setVisitorFilter("high_intent")}
+              >
+                High Intent (60+)
+              </button>
+              <button
+                className={visitorFilter === "cart" ? "nitro-btn-primary" : "nitro-btn-secondary"}
+                onClick={() => setVisitorFilter("cart")}
+              >
+                In Cart
+              </button>
+              <button
+                className={visitorFilter === "identified" ? "nitro-btn-primary" : "nitro-btn-secondary"}
+                onClick={() => setVisitorFilter("identified")}
+              >
+                Identified Leads
+              </button>
+            </ButtonGroup>
+
+            <div style={{ flex: 1 }}></div>
+
+            <div style={{ width: "260px" }}>
+              <TextField
+                label=""
+                labelHidden
+                placeholder="Search ID, email, name, OS, browser..."
+                value={searchQuery}
+                onChange={(val) => setSearchQuery(val)}
+                autoComplete="off"
+                clearButton
+                onClearButtonClick={() => setSearchQuery("")}
+              />
+            </div>
+          </div>
+
+          <section className="nitro-card" style={{ overflowX: "auto" }}>
+            <div style={{
+              minWidth: "960px",
+              display: "grid",
+              gridTemplateColumns: "minmax(220px, 1.6fr) 140px 160px 110px 110px 80px 100px",
+              gap: "12px",
+              padding: "9px 15px",
+              background: "#faf9f6",
+              borderBottom: "1px solid #e9e8e1",
+              fontSize: "10.5px",
+              letterSpacing: "0.07em",
+              textTransform: "uppercase",
+              color: "#85857d",
+              fontWeight: 600,
+            }}>
+              <div>Visitor / Lead</div>
+              <div>Device &amp; Hardware</div>
+              <div>Captured Contact</div>
+              <div>Intent Score</div>
+              <div>Cart Activity</div>
+              <div>Last Seen</div>
+              <div>Action</div>
+            </div>
 
             {filteredVisitors.length === 0 ? (
-              <EmptyState
-                heading="No matching visitor records"
-                action={{
-                  content: "Open Live Simulator",
-                  onAction: () => navigate("/app/simulator"),
-                }}
-                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-              >
-                <p>Simulate storefront visitor traffic to see real-time device fingerprinting and identity stitching.</p>
-              </EmptyState>
+              <div style={{ padding: "44px 15px", textAlign: "center", color: "#8b8b84", fontSize: "12.5px" }}>
+                No visitor records match this filter.
+              </div>
             ) : (
-              <DataTable
-                columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
-                headings={["Visitor / Lead", "Device & Browser", "Captured Contact", "Intent Propensity", "Identity Source", "Cart Activity", "Last Seen", "Action"]}
-                rows={visitorTableRows as any}
-              />
+              filteredVisitors.map((v) => {
+                const isIdentified = v.status === "identified";
+                const displayName = v.customer?.firstName
+                  ? `${v.customer.firstName} ${v.customer.lastName || ""}`
+                  : isIdentified && v.primaryEmail
+                  ? v.primaryEmail
+                  : `Anonymous #${v.visitorId.substring(0, 8)}`;
+
+                return (
+                  <div
+                    key={v.id}
+                    onClick={() => setSelectedVisitor(v)}
+                    style={{
+                      minWidth: "960px",
+                      display: "grid",
+                      gridTemplateColumns: "minmax(220px, 1.6fr) 140px 160px 110px 110px 80px 100px",
+                      gap: "12px",
+                      alignItems: "center",
+                      padding: "10px 15px",
+                      borderBottom: "1px solid #f1f0ea",
+                      cursor: "pointer",
+                      transition: "background 0.12s ease",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#faf9f6")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    {/* Visitor / Lead */}
+                    <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{
+                        width: "7px",
+                        height: "7px",
+                        borderRadius: "50%",
+                        background: isIdentified ? "#0F8A5F" : v.intentScore >= 60 ? "#b4551f" : "#96968e",
+                        flex: "none",
+                      }}></span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: "12.5px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {displayName}
+                        </div>
+                        <div className="mono" style={{ fontSize: "10.5px", color: "#96968e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {v.visitorId.substring(0, 16)}...
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Device & Hardware */}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.browser} on {v.os}
+                      </div>
+                      <div className="mono" style={{ fontSize: "10.5px", color: "#8b8b84" }}>
+                        {v.screenResolution}
+                      </div>
+                    </div>
+
+                    {/* Captured Contact */}
+                    <div style={{ minWidth: 0 }}>
+                      {v.primaryEmail ? (
+                        <div style={{ fontSize: "12px", fontWeight: 600, color: "#0F8A5F", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {v.primaryEmail}
+                        </div>
+                      ) : (
+                        <span style={{ color: "#8b8b84", fontSize: "11.5px" }}>Anonymous</span>
+                      )}
+                      {v.primaryPhone && (
+                        <div className="mono" style={{ fontSize: "10.5px", color: "#5B45D6" }}>
+                          {v.primaryPhone}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Intent Score */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span className="ong-badge ong-badge-accent" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+                        {`${v.intentScore}/100`}
+                      </span>
+                      <span style={{ fontSize: "10.5px", color: "#8b8b84", textTransform: "capitalize" }}>
+                        {v.intentTier.replace("_", " ")}
+                      </span>
+                    </div>
+
+                    {/* Cart Activity */}
+                    <div style={{ fontSize: "11.5px", color: "#55554e" }}>
+                      {v.cartEventsCount > 0 ? (
+                        <strong style={{ color: "#5B45D6" }}>{`${v.cartEventsCount} items ($${v.cartValue})`}</strong>
+                      ) : (
+                        `${v.productsViewedCount} viewed`
+                      )}
+                    </div>
+
+                    {/* Last Seen */}
+                    <div className="mono" style={{ fontSize: "11px", color: "#8b8b84" }}>
+                      {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+
+                    {/* Action */}
+                    <div>
+                      <button
+                        className="nitro-btn-secondary"
+                        style={{ padding: "4px 8px", fontSize: "11px" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedVisitor(v);
+                        }}
+                      >
+                        Inspect Lore →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
-          </BlockStack>
-        </Card>
 
-        {/* Live Orders & Customers */}
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="300">
-                <InlineStack align="space-between">
-                  <InlineStack gap="100">
-                    <Icon name="ic-package" size={18} color="var(--accent)" />
-                    <Text variant="headingMd" as="h2">Recent Store Orders</Text>
-                  </InlineStack>
-                  <span className="ong-badge ong-badge-accent">{`${recentOrders.length} orders loaded`}</span>
-                </InlineStack>
-                <Divider />
-                {recentOrders.length === 0 ? (
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    No orders placed in this store yet. Place a test checkout to see orders populate here.
-                  </Text>
-                ) : (
-                  <DataTable
-                    columnContentTypes={["text", "text", "text", "numeric", "text", "text"]}
-                    headings={["Order", "Customer", "Email", "Total", "Status", "Date"]}
-                    rows={orderRows as any}
-                  />
-                )}
-              </BlockStack>
-            </Card>
-          </Layout.Section>
+            <div style={{ padding: "9px 15px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#faf9f6", fontSize: "11px", color: "#75756d" }}>
+              <span>Showing {filteredVisitors.length} active visitor records</span>
+              <span className="mono">auto-refresh 5s</span>
+            </div>
+          </section>
+        </div>
 
-          <Layout.Section variant="oneThird">
-            <Card>
-              <BlockStack gap="300">
-                <InlineStack gap="100">
-                  <Icon name="ic-users" size={18} color="var(--accent)" />
-                  <Text variant="headingMd" as="h2">Synced Customers</Text>
-                </InlineStack>
-                <Divider />
-                {customersList.length === 0 ? (
-                  <Text variant="bodyMd" tone="subdued" as="p">
-                    No customer profiles found. Click "Add Test Lead" above.
-                  </Text>
-                ) : (
-                  <List type="bullet">
-                    {customersList.slice(0, 8).map((c) => (
-                      <List.Item key={c.id}>
-                        <strong>{c.displayName}</strong> &mdash;{" "}
-                        <Text variant="bodySm" tone="subdued" as="span">
-                          {c.email || "No email"} ({c.ordersCount || 0} orders)
-                        </Text>
-                      </List.Item>
-                    ))}
-                  </List>
-                )}
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
-      </BlockStack>
+      </div>
 
-      {/* Interactive Popup Modal for Lore & Detailed Visitor Journey */}
+      {/* Standalone Style Interactive Slide-Out / Modal Lore Popup */}
       {selectedVisitor && (
         <Modal
           open={Boolean(selectedVisitor)}
           onClose={() => setSelectedVisitor(null)}
-          title={`Visitor Lore & Stitched Profile: ${selectedVisitor.visitorId.substring(0, 12)}...`}
+          title={`Visitor Lore & Profile: ${selectedVisitor.visitorId.substring(0, 16)}...`}
           primaryAction={{
             content: "Close Lore",
             onAction: () => setSelectedVisitor(null),
@@ -1035,182 +1053,152 @@ export default function AppDashboard() {
           ]}
         >
           <Modal.Section>
-            <BlockStack gap="400">
-              {/* Identity & Status Card */}
-              <div style={{ background: "var(--bg-subtle)", padding: "16px", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                <BlockStack gap="200">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <InlineStack gap="150" align="center">
-                      <Icon
-                        name={selectedVisitor.status === "identified" ? "ic-user-check" : "ic-user"}
-                        size={22}
-                        color={selectedVisitor.status === "identified" ? "var(--ok)" : "var(--faint)"}
-                      />
-                      <Text variant="headingMd" as="h3">
-                        {selectedVisitor.customer?.firstName
-                          ? `${selectedVisitor.customer.firstName} ${selectedVisitor.customer.lastName || ""}`
-                          : selectedVisitor.primaryEmail || "Anonymous Storefront Shopper"}
-                      </Text>
-                    </InlineStack>
-                    <span className={`ong-badge ${selectedVisitor.status === "identified" ? "ong-badge-success" : ""}`}>
-                      {selectedVisitor.status.toUpperCase()}
-                    </span>
-                  </InlineStack>
-
-                  <Grid>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Captured Email:</Text>
-                      <Text variant="bodyMd" fontWeight="bold" as="p">{selectedVisitor.primaryEmail || "None (Anonymous)"}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Captured Phone:</Text>
-                      <Text variant="bodyMd" fontWeight="bold" as="p">{selectedVisitor.primaryPhone || "None"}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Identity Source:</Text>
-                      <span className="ong-badge ong-badge-accent">
-                        {selectedVisitor.identitySource.replace(/_/g, " ").toUpperCase()}
-                      </span>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Cart Value:</Text>
-                      <Text variant="bodyMd" fontWeight="bold" as="p">{`$${selectedVisitor.cartValue || 0}`}</Text>
-                    </Grid.Cell>
-                  </Grid>
-                </BlockStack>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              
+              {/* Header Profile */}
+              <div style={{ padding: "14px 16px", background: "#faf9f6", border: "1px solid #e3e2dc", borderRadius: "8px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: selectedVisitor.status === "identified" ? "#0F8A5F" : "#96968e",
+                    }}></span>
+                    <strong style={{ fontSize: "14px" }}>
+                      {selectedVisitor.customer?.firstName
+                        ? `${selectedVisitor.customer.firstName} ${selectedVisitor.customer.lastName || ""}`
+                        : selectedVisitor.primaryEmail || "Anonymous Storefront Shopper"}
+                    </strong>
+                  </div>
+                  <span className={`ong-badge ${selectedVisitor.status === "identified" ? "ong-badge-success" : ""}`}>
+                    {selectedVisitor.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="mono" style={{ fontSize: "11px", color: "#8b8b84", wordBreak: "break-all" }}>
+                  {selectedVisitor.visitorId}
+                </div>
               </div>
 
-              {/* Hardware & Browser Profile Card */}
-              <Card>
-                <BlockStack gap="200">
-                  <InlineStack gap="100" align="center">
-                    <Icon name="ic-server" size={16} color="var(--accent)" />
-                    <Text variant="headingSm" as="h4">Device, Browser & LocalStorage Vault</Text>
-                  </InlineStack>
-                  <Divider />
-                  <Grid>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Browser:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{selectedVisitor.browser}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Operating System:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{selectedVisitor.os}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Screen Resolution:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{selectedVisitor.screenResolution}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Timezone / Locale:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{`${selectedVisitor.timezone} (${selectedVisitor.language})`}</Text>
-                    </Grid.Cell>
-                  </Grid>
-                </BlockStack>
-              </Card>
+              {/* Facts Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", background: "#fff", border: "1px solid #e3e2dc", borderRadius: "8px", padding: "14px" }}>
+                <div>
+                  <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Captured Email</div>
+                  <div style={{ marginTop: "2px", fontSize: "12.5px", fontWeight: 600, color: selectedVisitor.primaryEmail ? "#0F8A5F" : "#16161a" }}>
+                    {selectedVisitor.primaryEmail || "None (Anonymous)"}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Captured Phone</div>
+                  <div style={{ marginTop: "2px", fontSize: "12.5px", fontWeight: 600, color: selectedVisitor.primaryPhone ? "#5B45D6" : "#16161a" }}>
+                    {selectedVisitor.primaryPhone || "None"}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Device &amp; Browser</div>
+                  <div style={{ marginTop: "2px", fontSize: "12px", fontWeight: 500 }}>
+                    {selectedVisitor.browser} on {selectedVisitor.os}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Screen Resolution &amp; Timezone</div>
+                  <div className="mono" style={{ marginTop: "2px", fontSize: "11px", color: "#55554e" }}>
+                    {selectedVisitor.screenResolution} · {selectedVisitor.timezone}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Identity Source</div>
+                  <span className="ong-badge ong-badge-accent" style={{ marginTop: "4px" }}>
+                    {selectedVisitor.identitySource.replace(/_/g, " ").toUpperCase()}
+                  </span>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Cart Value</div>
+                  <div style={{ marginTop: "2px", fontSize: "13px", fontWeight: 600, color: "#5B45D6" }}>
+                    ${selectedVisitor.cartValue || 0}
+                  </div>
+                </div>
+              </div>
 
               {/* Intent Score Breakdown */}
-              <Card>
-                <BlockStack gap="200">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="headingSm" as="h4">Intent Propensity Score</Text>
-                    <InlineStack gap="100">
-                      <Badge tone={selectedVisitor.intentScore >= 61 ? "success" : "attention"}>
-                        {`${selectedVisitor.intentScore} / 100`}
-                      </Badge>
-                      <span className="ong-badge">{selectedVisitor.intentTier.toUpperCase()}</span>
-                    </InlineStack>
-                  </InlineStack>
+              <div style={{ background: "#fff", border: "1px solid #e3e2dc", borderRadius: "8px", padding: "14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600 }}>Intent Propensity Score</div>
+                  <span className="ong-badge ong-badge-accent" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+                    {`${selectedVisitor.intentScore}/100 · ${selectedVisitor.intentTier.toUpperCase()}`}
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", marginTop: "10px" }}>
+                  <div>
+                    <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Product Views</div>
+                    <div style={{ fontWeight: 600, fontSize: "12px" }}>+{selectedVisitor.intentBreakdown?.productEngagement || 0} pts</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Cart Activity</div>
+                    <div style={{ fontWeight: 600, fontSize: "12px" }}>+{selectedVisitor.intentBreakdown?.cartActivity || 0} pts</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Checkout Step</div>
+                    <div style={{ fontWeight: 600, fontSize: "12px" }}>+{selectedVisitor.intentBreakdown?.checkoutProgress || 0} pts</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "10.5px", color: "#8b8b84" }}>Session Depth</div>
+                    <div style={{ fontWeight: 600, fontSize: "12px" }}>+{selectedVisitor.intentBreakdown?.sessionDepth || 0} pts</div>
+                  </div>
+                </div>
+              </div>
 
-                  <ProgressBar progress={selectedVisitor.intentScore} size="small" tone={selectedVisitor.intentScore >= 61 ? "success" : "highlight"} />
-
-                  <Grid>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Product Views:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{`+${selectedVisitor.intentBreakdown?.productEngagement || 0} pts`}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Cart Items:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{`+${selectedVisitor.intentBreakdown?.cartActivity || 0} pts`}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Checkout Step:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{`+${selectedVisitor.intentBreakdown?.checkoutProgress || 0} pts`}</Text>
-                    </Grid.Cell>
-                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-                      <Text variant="bodySm" tone="subdued" as="p">Session Depth:</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="p">{`+${selectedVisitor.intentBreakdown?.sessionDepth || 0} pts`}</Text>
-                    </Grid.Cell>
-                  </Grid>
-                </BlockStack>
-              </Card>
-
-              {/* Event Lore & Chronological Timeline */}
-              <BlockStack gap="200">
-                <Text variant="headingSm" as="h4">Chronological Event Timeline & Lore</Text>
-                <div style={{ maxHeight: "240px", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "6px", padding: "8px" }}>
+              {/* Event Timeline */}
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "8px" }}>Chronological Event Timeline</div>
+                <div style={{ maxHeight: "240px", overflowY: "auto", border: "1px solid #e3e2dc", borderRadius: "8px", padding: "12px" }}>
                   {selectedVisitor.events && selectedVisitor.events.length > 0 ? (
-                    <BlockStack gap="150">
-                      {selectedVisitor.events.map((ev: any, idx: number) => {
-                        let iconName = "ic-activity";
-                        let tagTone = "";
-                        if (ev.eventType === "product_viewed") {
-                          iconName = "ic-diamond";
-                        } else if (ev.eventType === "product_added_to_cart") {
-                          iconName = "ic-cart";
-                          tagTone = "ong-badge-warn";
-                        } else if (ev.eventType.includes("checkout")) {
-                          iconName = "ic-check-circle";
-                          tagTone = "ong-badge-success";
-                        }
+                    selectedVisitor.events.map((ev: any, idx: number) => {
+                      let points = "+5 pts";
+                      if (ev.eventType === "product_added_to_cart") points = "+25 pts";
+                      else if (ev.eventType.includes("checkout")) points = "+30 pts";
+                      else if (ev.eventType === "product_viewed") points = "+10 pts";
 
-                        return (
-                          <div
-                            key={ev.id || idx}
-                            style={{
-                              padding: "8px 12px",
-                              background: "var(--bg-card)",
-                              border: "1px solid var(--border)",
-                              borderRadius: "6px",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                            }}
-                          >
-                            <InlineStack gap="150" align="center">
-                              <Icon name={iconName} size={15} color="var(--accent)" />
-                              <BlockStack gap="050">
-                                <InlineStack gap="100" align="center">
-                                  <span className={`ong-badge ${tagTone}`} style={{ fontSize: "10px" }}>
-                                    {ev.eventType.replace(/_/g, " ").toUpperCase()}
-                                  </span>
-                                  {ev.productId && (
-                                    <span className="mono" style={{ fontSize: "11px", color: "var(--muted)" }}>
-                                      SKU: {ev.productId.split("/").pop()}
-                                    </span>
-                                  )}
-                                </InlineStack>
-                                {ev.pageUrl && (
-                                  <span style={{ fontSize: "11.5px", color: "var(--faint)", wordBreak: "break-all" }}>
-                                    {ev.pageUrl}
-                                  </span>
-                                )}
-                              </BlockStack>
-                            </InlineStack>
-
-                            <span className="mono" style={{ fontSize: "11px", color: "var(--muted)" }}>
-                              {new Date(ev.timestamp).toLocaleTimeString()}
+                      return (
+                        <div key={ev.id || idx} style={{ display: "grid", gridTemplateColumns: "55px 14px 1fr", gap: "10px", alignItems: "start" }}>
+                          <div className="mono" style={{ fontSize: "10.5px", color: "#96968e", paddingTop: "2px", textAlign: "right" }}>
+                            {new Date(ev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", alignSelf: "stretch" }}>
+                            <span style={{
+                              width: "7px",
+                              height: "7px",
+                              borderRadius: "50%",
+                              background: ev.eventType.includes("checkout") ? "#0F8A5F" : ev.eventType.includes("cart") ? "#b4551f" : "#5B45D6",
+                            }}></span>
+                            <span style={{ flex: 1, width: "1px", background: "#e6e5de", minHeight: "14px" }}></span>
+                          </div>
+                          <div style={{ paddingBottom: "12px" }}>
+                            <div style={{ fontSize: "12px", fontWeight: 600 }}>
+                              {ev.eventType.replace(/_/g, " ").toUpperCase()}
+                            </div>
+                            {ev.pageUrl && (
+                              <div style={{ fontSize: "11px", color: "#6b6b64", wordBreak: "break-all" }}>{ev.pageUrl}</div>
+                            )}
+                            <span className="ong-badge ong-badge-accent" style={{ marginTop: "3px", fontSize: "10px", fontFamily: "'IBM Plex Mono', monospace" }}>
+                              {points}
                             </span>
                           </div>
-                        );
-                      })}
-                    </BlockStack>
+                        </div>
+                      );
+                    })
                   ) : (
-                    <Text variant="bodySm" tone="subdued" as="p">No micro-events recorded yet for this visitor.</Text>
+                    <div style={{ fontSize: "12px", color: "#8b8b84" }}>No events recorded yet.</div>
                   )}
                 </div>
-              </BlockStack>
-            </BlockStack>
+              </div>
+
+            </div>
           </Modal.Section>
         </Modal>
       )}

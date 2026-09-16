@@ -1,65 +1,113 @@
-﻿@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
 
 :root {
   --accent: #5B45D6;
-  --accent-soft: color-mix(in srgb, #5B45D6 9%, #fff);
-  --accent-line: color-mix(in srgb, #5B45D6 22%, #fff);
-  --ink: #16141F;
-  --heading: #241F33;
-  --body: #4A4557;
-  --muted: #7A7488;
-  --faint: #A39DB2;
-  --border: #E8E5F0;
-  --divider: #F1EFF6;
-  --panel: #FAF9FC;
-  --page: #F6F5FA;
+  --accent-soft: #f2effe;
+  --accent-line: #4a2bd6;
+  --bg-page: #f4f4f1;
+  --bg-card: #ffffff;
+  --bg-header: #fbfbf9;
+  --bg-subtle: #faf9f6;
+  --border: #e3e2dc;
+  --border-subtle: #ecebe5;
+  --border-divider: #f1f0ea;
+  --text-main: #16161a;
+  --text-muted: #6b6b64;
+  --text-faint: #8b8b84;
+  --text-mono: #96968e;
+  --sidebar-bg: #16161a;
+  --sidebar-border: #26262c;
+  --sidebar-text: #f4f4f1;
   --ok: #0F8A5F;
   --ok-bg: #E9F7F1;
   --ok-line: #BFE6D5;
-  --warn: #9A5B08;
+  --warn: #b4551f;
   --warn-bg: #FDF5E7;
   --warn-line: #F2DDB4;
   --danger: #CE2247;
   --danger-bg: #FDEEF1;
   --danger-line: #F6C9D4;
-  --card-shadow: 0 1px 2px rgba(22, 20, 31, 0.05);
-  --lift-shadow: 0 8px 24px -10px rgba(22, 20, 31, 0.18);
 }
 
+* { box-sizing: border-box; }
+
 body {
-  font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  color: var(--body);
-  background-color: var(--page);
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  color: var(--text-main);
+  background-color: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0;
 }
 
 .mono {
-  font-family: "IBM Plex Mono", monospace !important;
+  font-family: 'IBM Plex Mono', monospace !important;
 }
 
-.ong-card {
-  background: #ffffff;
+@keyframes slideIn {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.nitro-card {
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: var(--card-shadow);
-  padding: 20px;
-  transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(22, 22, 26, 0.04);
 }
 
-.ong-card:hover {
-  box-shadow: var(--lift-shadow);
+.nitro-btn-primary {
+  padding: 7px 13px;
+  border: 1px solid var(--sidebar-bg);
+  border-radius: 7px;
+  background: var(--sidebar-bg);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.nitro-btn-primary:hover {
+  background: #2c2c34;
+}
+
+.nitro-btn-secondary {
+  padding: 7px 12px;
+  border: 1px solid #d9d8d1;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  color: #33332e;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.nitro-btn-secondary:hover {
+  background: #f2f1ec;
 }
 
 .ong-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 600;
   border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--muted);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
 
 .ong-badge-success {
@@ -70,8 +118,8 @@ body {
 
 .ong-badge-accent {
   background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent);
+  border-color: #d6ccff;
+  color: var(--accent-line);
 }
 
 .ong-badge-danger {
