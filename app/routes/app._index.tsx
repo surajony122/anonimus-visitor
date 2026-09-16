@@ -133,7 +133,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           visitors: {
             include: {
               sessions: true,
-              events: { orderBy: { timestamp: "desc" }, take: 30 },
+              events: { orderBy: { timestamp: "desc" }, take: 40 },
               identities: true,
               customerLinks: { include: { customer: true } },
             },
@@ -170,6 +170,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         }
 
         visitorsData = shop.visitors.map((v) => {
+          let clientMeta: any = {};
+          try {
+            if (v.metadata) clientMeta = JSON.parse(v.metadata);
+          } catch {}
+
           const pViews = v.events.filter((e) => e.eventType === "product_viewed").length;
           const uniqueProductIds = new Set(
             v.events
@@ -219,7 +224,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             status: v.status,
             firstSeenAt: v.firstSeenAt.toISOString(),
             lastSeenAt: v.lastSeenAt.toISOString(),
-            deviceCategory: v.deviceCategory || "desktop",
+            deviceCategory: v.deviceCategory || clientMeta.deviceCategory || "desktop",
+            browser: clientMeta.browser || "Chrome / WebKit",
+            os: clientMeta.os || "Windows / macOS",
+            screenResolution: clientMeta.screenResolution || "1920x1080",
+            language: clientMeta.language || "en",
+            timezone: clientMeta.timezone || "Local",
+            storageAvailable: clientMeta.storageAvailable ?? true,
             sessionsCount: v.sessions.length || 1,
             productsViewedCount: pViews,
             cartEventsCount: addToCart,
@@ -399,89 +410,138 @@ export default function AppDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
 
-  const pixelCodeSnippet = `const ENDPOINT_EVENTS = "https://nitro-shopify-visitor-intelligence.onrender.com/api/events";
-const ENDPOINT_IDENTIFY = "https://nitro-shopify-visitor-intelligence.onrender.com/api/identity/identify";
-const STORAGE_KEY = "_nitro_vid";
+  // Full-featured universal tracker with localStorage, device extraction, and input interceptor
+  const universalTrackerSnippet = `<!-- Nitro Commerce Intelligent Storefront & Device Tracker -->
+<script>
+(function() {
+  var ENDPOINT_EVENTS = "https://nitro-shopify-visitor-intelligence.onrender.com/api/events";
+  var ENDPOINT_IDENTIFY = "https://nitro-shopify-visitor-intelligence.onrender.com/api/identity/identify";
+  var STORAGE_KEY_VID = "_nitro_vid";
+  var STORAGE_KEY_PROFILE = "_nitro_profile";
 
-function getVisitorId() {
-  try {
-    let vid = localStorage.getItem(STORAGE_KEY);
-    if (!vid) {
-      vid = "vid_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now().toString(36);
-      localStorage.setItem(STORAGE_KEY, vid);
+  // 1. Persistent 1st-Party Visitor ID in localStorage & cookie
+  function getVisitorId() {
+    try {
+      var vid = localStorage.getItem(STORAGE_KEY_VID);
+      if (!vid) {
+        vid = "vid_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now().toString(36);
+        localStorage.setItem(STORAGE_KEY_VID, vid);
+      }
+      return vid;
+    } catch (e) {
+      return "anon_" + Date.now();
     }
-    return vid;
-  } catch (e) {
-    return "anon_" + Date.now();
   }
-}
 
-function identifyVisitor(type, value, source) {
-  if (!value || !value.trim()) return;
-  const visitorId = getVisitorId();
-  fetch(ENDPOINT_IDENTIFY, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
-    body: JSON.stringify({ visitor_id: visitorId, type: type, value: value.trim(), source: source }),
-    keepalive: true,
-  }).catch(() => {});
-}
+  // 2. Hardware, OS, Browser & Screen Intelligence
+  function getDeviceProfile() {
+    var ua = navigator.userAgent || "";
+    var browser = "Chrome";
+    if (ua.indexOf("Safari") !== -1 && ua.indexOf("Chrome") === -1) browser = "Safari";
+    else if (ua.indexOf("Firefox") !== -1) browser = "Firefox";
+    else if (ua.indexOf("Edg") !== -1) browser = "Edge";
 
-function trackEvent(eventType, eventData) {
-  const visitorId = getVisitorId();
-  const href = eventData.context?.document?.location?.href || window.location.href;
+    var os = "Desktop OS";
+    if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+    else if (/Android/i.test(ua)) os = "Android";
+    else if (/Windows/i.test(ua)) os = "Windows";
+    else if (/Macintosh|Mac OS/i.test(ua)) os = "macOS";
+    else if (/Linux/i.test(ua)) os = "Linux";
 
+    var isMobile = os === "iOS" || os === "Android" || /Mobi|Android/i.test(ua);
+
+    return {
+      deviceCategory: isMobile ? "mobile" : "desktop",
+      browser: browser,
+      os: os,
+      screenResolution: window.screen ? window.screen.width + "x" + window.screen.height : "1920x1080",
+      language: navigator.language || "en",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      storageAvailable: true
+    };
+  }
+
+  // 3. Instant Zero-Friction Identity Stitcher
+  function identifyVisitor(type, value, source) {
+    if (!value || typeof value !== "string" || !value.trim()) return;
+    var vid = getVisitorId();
+    try {
+      var profile = JSON.parse(localStorage.getItem(STORAGE_KEY_PROFILE) || "{}");
+      profile[type] = value.trim();
+      localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+    } catch(e) {}
+
+    fetch(ENDPOINT_IDENTIFY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
+      body: JSON.stringify({ visitor_id: vid, type: type, value: value.trim(), source: source || "storefront_interceptor" }),
+      keepalive: true
+    }).catch(function() {});
+  }
+
+  // 4. Auto-Harvest from Campaign URLs (?email=... &phone=...)
   try {
-    if (href.includes("?")) {
-      const params = new URL(href).searchParams;
-      const urlEmail = params.get("email") || params.get("utm_email") || params.get("contact");
-      const urlPhone = params.get("phone") || params.get("tel") || params.get("whatsapp");
-      if (urlEmail && urlEmail.includes("@")) identifyVisitor("email", urlEmail, "url_campaign");
+    if (window.location.search) {
+      var params = new URLSearchParams(window.location.search);
+      var urlEmail = params.get("email") || params.get("utm_email") || params.get("contact");
+      var urlPhone = params.get("phone") || params.get("tel") || params.get("whatsapp");
+      if (urlEmail && urlEmail.indexOf("@") !== -1) identifyVisitor("email", urlEmail, "url_campaign");
       if (urlPhone && urlPhone.length >= 7) identifyVisitor("phone", urlPhone, "url_campaign");
     }
   } catch(e) {}
 
-  fetch(ENDPOINT_EVENTS, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
-    body: JSON.stringify({
-      visitor_id: visitorId,
-      event_type: eventType,
-      timestamp: eventData.timestamp || new Date().toISOString(),
-      page_url: href,
-      product_id: eventData.data?.productVariant?.product?.id,
-      variant_id: eventData.data?.productVariant?.id,
-      cart_id: eventData.data?.cart?.id || eventData.data?.checkout?.id,
-      metadata: { ...eventData.data }
-    }),
-    keepalive: true,
-  }).catch(() => {});
-}
+  // 5. Auto-Detect Shopify Logged-in Customer ID
+  try {
+    if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page && window.ShopifyAnalytics.meta.page.customerId) {
+      identifyVisitor("shopify_customer", String(window.ShopifyAnalytics.meta.page.customerId), "shopify_session");
+    }
+  } catch(e) {}
 
-analytics.subscribe("page_viewed", (e) => trackEvent("page_viewed", e));
-analytics.subscribe("product_viewed", (e) => trackEvent("product_viewed", e));
-analytics.subscribe("product_added_to_cart", (e) => trackEvent("product_added_to_cart", e));
-analytics.subscribe("cart_viewed", (e) => trackEvent("cart_viewed", e));
-analytics.subscribe("checkout_started", (e) => {
-  trackEvent("checkout_started", e);
-  if (e.data?.checkout?.email) identifyVisitor("email", e.data.checkout.email, "checkout_started");
-  if (e.data?.checkout?.phone) identifyVisitor("phone", e.data.checkout.phone, "checkout_started");
-});
-analytics.subscribe("checkout_completed", (e) => {
-  trackEvent("checkout_completed", e);
-  if (e.data?.checkout?.email) identifyVisitor("email", e.data.checkout.email, "checkout_completed");
-  if (e.data?.checkout?.phone) identifyVisitor("phone", e.data.checkout.phone, "checkout_completed");
-});`;
+  // 6. Passive Input Keystroke & Autofill Interception (Captures before submission)
+  document.addEventListener("input", function(e) {
+    var el = e.target;
+    if (!el || !el.value) return;
+    var val = el.value.trim();
+    if ((el.type === "email" || el.name === "email" || el.id.indexOf("email") !== -1) && val.indexOf("@") !== -1 && val.indexOf(".") !== -1) {
+      identifyVisitor("email", val, "storefront_autofill");
+    }
+    if ((el.type === "tel" || el.name === "phone" || el.id.indexOf("phone") !== -1) && val.length >= 8) {
+      identifyVisitor("phone", val, "storefront_autofill");
+    }
+  }, true);
 
-  const handleCopyPixel = () => {
-    navigator.clipboard.writeText(pixelCodeSnippet);
+  // 7. Event Dispatcher with Rich Device Profile
+  window.nitroTrack = function(eventType, eventData) {
+    var vid = getVisitorId();
+    var dev = getDeviceProfile();
+    fetch(ENDPOINT_EVENTS, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
+      body: JSON.stringify({
+        visitor_id: vid,
+        event_type: eventType,
+        page_url: window.location.href,
+        device: dev,
+        metadata: Object.assign({}, eventData || {}, { device: dev })
+      }),
+      keepalive: true
+    }).catch(function() {});
+  };
+
+  // Auto-record initial page view
+  window.nitroTrack("page_viewed", { title: document.title });
+})();
+</script>`;
+
+  const handleCopyTracker = () => {
+    navigator.clipboard.writeText(universalTrackerSnippet);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
 
   const handleExportCSV = () => {
     if (!visitorsData || visitorsData.length === 0) return;
-    const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Email", "Phone", "Identity Source", "Cart Value", "Sessions", "First Seen", "Last Seen"];
+    const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Email", "Phone", "Identity Source", "Browser", "OS", "Device", "Resolution", "Cart Value", "Sessions", "First Seen", "Last Seen"];
     const rows = visitorsData.map((v) => [
       v.visitorId,
       v.status,
@@ -490,6 +550,10 @@ analytics.subscribe("checkout_completed", (e) => {
       v.primaryEmail || "",
       v.primaryPhone || "",
       v.identitySource || "",
+      v.browser || "",
+      v.os || "",
+      v.deviceCategory || "",
+      v.screenResolution || "",
       v.cartValue || "0",
       v.sessionsCount || "1",
       v.firstSeenAt,
@@ -521,6 +585,8 @@ analytics.subscribe("checkout_completed", (e) => {
         v.visitorId.toLowerCase().includes(q) ||
         (v.primaryEmail && v.primaryEmail.toLowerCase().includes(q)) ||
         (v.primaryPhone && v.primaryPhone.includes(q)) ||
+        (v.browser && v.browser.toLowerCase().includes(q)) ||
+        (v.os && v.os.toLowerCase().includes(q)) ||
         (v.customer?.firstName && v.customer.firstName.toLowerCase().includes(q))
     );
   }
@@ -539,26 +605,53 @@ analytics.subscribe("checkout_completed", (e) => {
     else if (v.intentTier === "medium") tierTone = "info";
 
     return [
-      <InlineStack gap="150" align="center" key={`lead_${v.id}`}>
-        <Icon name={isIdentified ? "ic-user-check" : "ic-user"} size={16} color={isIdentified ? "var(--ok)" : "var(--faint)"} />
-        <Button variant="plain" onClick={() => setSelectedVisitor(v)}>
-          <strong>{displayName}</strong>
-        </Button>
+      <BlockStack gap="050" key={`lead_${v.id}`}>
+        <InlineStack gap="150" align="center">
+          <Icon name={isIdentified ? "ic-user-check" : "ic-user"} size={16} color={isIdentified ? "var(--ok)" : "var(--faint)"} />
+          <Button variant="plain" onClick={() => setSelectedVisitor(v)}>
+            <strong>{displayName}</strong>
+          </Button>
+        </InlineStack>
         <span className="mono" style={{ fontSize: "11px", color: "var(--faint)" }}>
-          {`(${v.visitorId.substring(0, 7)})`}
+          {v.visitorId.substring(0, 16)}...
         </span>
-      </InlineStack>,
+      </BlockStack>,
+      <BlockStack gap="050" key={`device_${v.id}`}>
+        <InlineStack gap="100" align="center">
+          <Icon name={v.deviceCategory === "mobile" ? "ic-phone" : "ic-server"} size={14} color="var(--accent)" />
+          <span style={{ fontWeight: 600, fontSize: "12px" }}>{`${v.browser} on ${v.os}`}</span>
+        </InlineStack>
+        <span className="mono" style={{ fontSize: "11px", color: "var(--muted)" }}>
+          {`${v.screenResolution} • ${v.timezone}`}
+        </span>
+      </BlockStack>,
+      <BlockStack gap="050" key={`contact_${v.id}`}>
+        {v.primaryEmail ? (
+          <InlineStack gap="050" align="center">
+            <Icon name="ic-mail" size={13} color="var(--ok)" />
+            <span style={{ fontWeight: 600, fontSize: "12px" }}>{v.primaryEmail}</span>
+          </InlineStack>
+        ) : (
+          <span style={{ color: "var(--muted)", fontSize: "12px" }}>Email: —</span>
+        )}
+        {v.primaryPhone ? (
+          <InlineStack gap="050" align="center">
+            <Icon name="ic-phone" size={13} color="var(--accent)" />
+            <span style={{ fontSize: "11.5px" }}>{v.primaryPhone}</span>
+          </InlineStack>
+        ) : null}
+      </BlockStack>,
       <BlockStack gap="050" key={`intent_${v.id}`}>
         <InlineStack gap="100" align="center">
           <Badge tone={tierTone}>{`${v.intentScore}/100`}</Badge>
           <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "capitalize" }}>{v.intentTier.replace("_", " ")}</span>
         </InlineStack>
-        <div style={{ width: "90px", marginTop: "4px" }}>
+        <div style={{ width: "80px", marginTop: "4px" }}>
           <ProgressBar progress={v.intentScore} size="small" tone={v.intentScore >= 61 ? "success" : "highlight"} />
         </div>
       </BlockStack>,
       <span key={`source_${v.id}`} className={`ong-badge ${isIdentified ? "ong-badge-success" : ""}`}>
-        {isIdentified ? v.identitySource.replace("_", " ").toUpperCase() : "ANONYMOUS"}
+        {isIdentified ? v.identitySource.replace(/_/g, " ").toUpperCase() : "ANONYMOUS"}
       </span>,
       v.cartEventsCount > 0 ? (
         <span key={`cart_${v.id}`} style={{ fontWeight: 600, color: "var(--accent)" }}>
@@ -567,7 +660,6 @@ analytics.subscribe("checkout_completed", (e) => {
       ) : (
         <span key={`cart_${v.id}`} style={{ color: "var(--muted)" }}>—</span>
       ),
-      <span key={`views_${v.id}`}>{`${v.productsViewedCount} products`}</span>,
       <span key={`seen_${v.id}`} style={{ fontSize: "12px", color: "var(--muted)" }}>
         {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </span>,
@@ -608,11 +700,11 @@ analytics.subscribe("checkout_completed", (e) => {
           <Icon name="ic-diamond" size={26} color="var(--accent)" />
           <span>{shopName}</span>
           <span className="ong-badge ong-badge-accent" style={{ marginLeft: "8px", verticalAlign: "middle" }}>
-            INTENT INTELLIGENCE
+            DEVICE & IDENTITY INTELLIGENCE
           </span>
         </InlineStack>
       }
-      subtitle={`Live Storefront Tracking: ${shopDomain}`}
+      subtitle={`Connected Storefront: ${shopDomain}`}
       primaryAction={{
         content: "Simulate Live Traffic",
         onAction: () => navigate("/app/simulator"),
@@ -640,13 +732,13 @@ analytics.subscribe("checkout_completed", (e) => {
           </Banner>
         )}
 
-        {/* Zero-Friction Lore & Explanation Banner */}
+        {/* Zero-Friction Storage & Device Lore Card */}
         <Card>
           <BlockStack gap="300">
             <InlineStack align="space-between" blockAlign="center">
               <InlineStack gap="200" align="center">
                 <Icon name={isPixelActive ? "ic-check-circle" : "ic-alert-triangle"} size={20} color={isPixelActive ? "var(--ok)" : "var(--warn)"} />
-                <Text variant="headingMd" as="h2">Zero-Friction Identity & Micro-Event Lore Engine</Text>
+                <Text variant="headingMd" as="h2">Zero-Friction Device, LocalStorage & Autofill Capture</Text>
                 <span className={`ong-badge ${isPixelActive ? "ong-badge-success" : "ong-badge-warn"}`}>
                   {isPixelActive ? "LIVE & INGESTING" : "AWAITING STOREFRONT PIXEL"}
                 </span>
@@ -659,48 +751,60 @@ analytics.subscribe("checkout_completed", (e) => {
             <Divider />
 
             <Grid>
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 4, lg: 4, xl: 4 }}>
+              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
+                <BlockStack gap="100">
+                  <InlineStack gap="100" align="center">
+                    <Icon name="ic-server" size={16} color="var(--accent)" />
+                    <Text variant="bodySm" fontWeight="bold" as="span">1. LocalStorage Device Vault</Text>
+                  </InlineStack>
+                  <Text variant="bodySm" tone="subdued" as="p">
+                    Stores persistent 1st-party token (<span className="mono">_nitro_vid</span>) + hardware info (Browser, OS, Screen, Timezone) in the user's browser for 365-day recognition.
+                  </Text>
+                </BlockStack>
+              </Grid.Cell>
+
+              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
+                <BlockStack gap="100">
+                  <InlineStack gap="100" align="center">
+                    <Icon name="ic-edit" size={16} color="var(--accent)" />
+                    <Text variant="bodySm" fontWeight="bold" as="span">2. Keystroke & Autofill Sniffer</Text>
+                  </InlineStack>
+                  <Text variant="bodySm" tone="subdued" as="p">
+                    When the user types or browser autofills email/phone into newsletter/footer/search inputs, it captures the value before form submission.
+                  </Text>
+                </BlockStack>
+              </Grid.Cell>
+
+              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
                 <BlockStack gap="100">
                   <InlineStack gap="100" align="center">
                     <Icon name="ic-tag" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">1. URL Campaign Auto-Capture</Text>
+                    <Text variant="bodySm" fontWeight="bold" as="span">3. URL Campaign Auto-Stitch</Text>
                   </InlineStack>
                   <Text variant="bodySm" tone="subdued" as="p">
-                    Send email/SMS campaigns with <span className="mono" style={{ background: "var(--bg-subtle)", padding: "1px 4px", borderRadius: "3px" }}>?email=user@domain.com</span>. The pixel auto-stitches their anonymous browsing session without requiring login or form submissions.
+                    Links with <span className="mono">?email=...&phone=...</span> instantly resolve the visitor's anonymous session without requiring any login.
                   </Text>
                 </BlockStack>
               </Grid.Cell>
 
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 4, lg: 4, xl: 4 }}>
-                <BlockStack gap="100">
-                  <InlineStack gap="100" align="center">
-                    <Icon name="ic-cart" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">2. Checkout Step 1 Interception</Text>
-                  </InlineStack>
-                  <Text variant="bodySm" tone="subdued" as="p">
-                    When a buyer types or autofills their email/phone at checkout Step 1 and drops off before paying, their full anonymous browsing lore is instantly preserved and identified.
-                  </Text>
-                </BlockStack>
-              </Grid.Cell>
-
-              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 4, lg: 4, xl: 4 }}>
+              <Grid.Cell columnSpan={{ xs: 12, sm: 6, md: 3, lg: 3, xl: 3 }}>
                 <BlockStack gap="100">
                   <InlineStack gap="100" align="center">
                     <Icon name="ic-send" size={16} color="var(--accent)" />
-                    <Text variant="bodySm" fontWeight="bold" as="span">3. Instant Webhook Dispatch</Text>
+                    <Text variant="bodySm" fontWeight="bold" as="span">4. Outbound Marketing Trigger</Text>
                   </InlineStack>
                   <Text variant="bodySm" tone="subdued" as="p">
-                    When intent score crosses 60+ (High Intent), an instant webhook is fired to Klaviyo, Omnisend, or WhatsApp API with the buyer's viewed products and cart items.
+                    Instantly dispatches webhooks to Klaviyo, WhatsApp, or Zapier when high intent is detected with the captured contact and cart items.
                   </Text>
                 </BlockStack>
               </Grid.Cell>
             </Grid>
 
             <InlineStack gap="200">
-              <Button variant="primary" onClick={handleCopyPixel}>
+              <Button variant="primary" onClick={handleCopyTracker}>
                 <InlineStack gap="100">
                   <Icon name={copied ? "ic-check" : "ic-copy"} size={14} />
-                  <span>{copied ? "Pixel Copied to Clipboard!" : "Copy Web Pixel Snippet"}</span>
+                  <span>{copied ? "Tracker Snippet Copied!" : "Copy Universal Tracker Snippet"}</span>
                 </InlineStack>
               </Button>
               <Button
@@ -782,60 +886,13 @@ analytics.subscribe("checkout_completed", (e) => {
           </Grid.Cell>
         </Grid>
 
-        {/* Behavioral Funnel Bar */}
-        <Card>
-          <BlockStack gap="300">
-            <InlineStack align="space-between">
-              <InlineStack gap="100">
-                <Icon name="ic-activity" size={18} color="var(--accent)" />
-                <Text variant="headingMd" as="h2">Storefront Conversion & Drop-off Funnel</Text>
-              </InlineStack>
-              <Text variant="bodySm" tone="subdued" as="span">{`${totalEventsLogged} total micro-events recorded`}</Text>
-            </InlineStack>
-
-            <Divider />
-
-            <BlockStack gap="200">
-              <InlineStack align="space-between">
-                <Text variant="bodySm" as="span">1. Storefront Visitors ({totalTrackedVisitors})</Text>
-                <Text variant="bodySm" fontWeight="bold" as="span">100%</Text>
-              </InlineStack>
-              <ProgressBar progress={100} size="small" tone="highlight" />
-
-              <InlineStack align="space-between">
-                <Text variant="bodySm" as="span">2. Product Page Viewers ({productViewersCount})</Text>
-                <Text variant="bodySm" fontWeight="bold" as="span">
-                  {totalTrackedVisitors > 0 ? `${Math.round((productViewersCount / totalTrackedVisitors) * 100)}%` : "0%"}
-                </Text>
-              </InlineStack>
-              <ProgressBar progress={totalTrackedVisitors > 0 ? (productViewersCount / totalTrackedVisitors) * 100 : 0} size="small" tone="highlight" />
-
-              <InlineStack align="space-between">
-                <Text variant="bodySm" as="span">3. Active Cart Additions ({cartAddersCount})</Text>
-                <Text variant="bodySm" fontWeight="bold" as="span">
-                  {totalTrackedVisitors > 0 ? `${Math.round((cartAddersCount / totalTrackedVisitors) * 100)}%` : "0%"}
-                </Text>
-              </InlineStack>
-              <ProgressBar progress={totalTrackedVisitors > 0 ? (cartAddersCount / totalTrackedVisitors) * 100 : 0} size="small" tone="primary" />
-
-              <InlineStack align="space-between">
-                <Text variant="bodySm" as="span">4. Checkout Started ({checkoutInitiatorsCount})</Text>
-                <Text variant="bodySm" fontWeight="bold" as="span">
-                  {totalTrackedVisitors > 0 ? `${Math.round((checkoutInitiatorsCount / totalTrackedVisitors) * 100)}%` : "0%"}
-                </Text>
-              </InlineStack>
-              <ProgressBar progress={totalTrackedVisitors > 0 ? (checkoutInitiatorsCount / totalTrackedVisitors) * 100 : 0} size="small" tone="success" />
-            </BlockStack>
-          </BlockStack>
-        </Card>
-
         {/* Full-Width Real-Time Visitor Lore Table */}
         <Card>
           <BlockStack gap="300">
             <InlineStack align="space-between" blockAlign="center">
               <InlineStack gap="150" align="center">
                 <Icon name="ic-users" size={20} color="var(--accent)" />
-                <Text variant="headingMd" as="h2">Live Visitor Intelligence & Stitched Leads</Text>
+                <Text variant="headingMd" as="h2">Live Visitor Device & Identity Lore Table</Text>
                 <span className="ong-badge ong-badge-accent">{`${filteredVisitors.length} Active Records`}</span>
               </InlineStack>
 
@@ -859,7 +916,7 @@ analytics.subscribe("checkout_completed", (e) => {
                   <TextField
                     label=""
                     labelHidden
-                    placeholder="Search ID, email, name, phone..."
+                    placeholder="Search visitor, email, OS, browser..."
                     value={searchQuery}
                     onChange={(val) => setSearchQuery(val)}
                     autoComplete="off"
@@ -881,12 +938,12 @@ analytics.subscribe("checkout_completed", (e) => {
                 }}
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               >
-                <p>Simulate storefront visitor traffic to see real-time identity stitching and journey lore.</p>
+                <p>Simulate storefront visitor traffic to see real-time device fingerprinting and identity stitching.</p>
               </EmptyState>
             ) : (
               <DataTable
-                columnContentTypes={["text", "text", "text", "text", "text", "text", "text"]}
-                headings={["Visitor / Lead", "Intent Propensity", "Identity Source", "Cart Activity", "Catalog Views", "Last Seen", "Action"]}
+                columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
+                headings={["Visitor / Lead", "Device & Browser", "Captured Contact", "Intent Propensity", "Identity Source", "Cart Activity", "Last Seen", "Action"]}
                 rows={visitorTableRows as any}
               />
             )}
@@ -1003,7 +1060,7 @@ analytics.subscribe("checkout_completed", (e) => {
                     <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
                       <Text variant="bodySm" tone="subdued" as="p">Identity Source:</Text>
                       <span className="ong-badge ong-badge-accent">
-                        {selectedVisitor.identitySource.replace("_", " ").toUpperCase()}
+                        {selectedVisitor.identitySource.replace(/_/g, " ").toUpperCase()}
                       </span>
                     </Grid.Cell>
                     <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
@@ -1013,6 +1070,35 @@ analytics.subscribe("checkout_completed", (e) => {
                   </Grid>
                 </BlockStack>
               </div>
+
+              {/* Hardware & Browser Profile Card */}
+              <Card>
+                <BlockStack gap="200">
+                  <InlineStack gap="100" align="center">
+                    <Icon name="ic-server" size={16} color="var(--accent)" />
+                    <Text variant="headingSm" as="h4">Device, Browser & LocalStorage Vault</Text>
+                  </InlineStack>
+                  <Divider />
+                  <Grid>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
+                      <Text variant="bodySm" tone="subdued" as="p">Browser:</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="p">{selectedVisitor.browser}</Text>
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
+                      <Text variant="bodySm" tone="subdued" as="p">Operating System:</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="p">{selectedVisitor.os}</Text>
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
+                      <Text variant="bodySm" tone="subdued" as="p">Screen Resolution:</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="p">{selectedVisitor.screenResolution}</Text>
+                    </Grid.Cell>
+                    <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
+                      <Text variant="bodySm" tone="subdued" as="p">Timezone / Locale:</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="p">{`${selectedVisitor.timezone} (${selectedVisitor.language})`}</Text>
+                    </Grid.Cell>
+                  </Grid>
+                </BlockStack>
+              </Card>
 
               {/* Intent Score Breakdown */}
               <Card>
@@ -1053,7 +1139,7 @@ analytics.subscribe("checkout_completed", (e) => {
               {/* Event Lore & Chronological Timeline */}
               <BlockStack gap="200">
                 <Text variant="headingSm" as="h4">Chronological Event Timeline & Lore</Text>
-                <div style={{ maxHeight: "260px", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "6px", padding: "8px" }}>
+                <div style={{ maxHeight: "240px", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "6px", padding: "8px" }}>
                   {selectedVisitor.events && selectedVisitor.events.length > 0 ? (
                     <BlockStack gap="150">
                       {selectedVisitor.events.map((ev: any, idx: number) => {

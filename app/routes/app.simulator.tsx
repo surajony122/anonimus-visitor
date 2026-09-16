@@ -65,6 +65,15 @@ export default function SimulatorRoute() {
           event_type: eventType,
           page_url: payload.page_url || `https://ravistore-shop.myshopify.com${payload.path || "/"}`,
           product_id: payload.productId,
+          device: {
+            deviceCategory: "desktop",
+            browser: "Chrome 122",
+            os: "Windows 11",
+            screenResolution: "1920x1080",
+            language: "en-US",
+            timezone: "Asia/Kolkata",
+            storageAvailable: true,
+          },
           metadata: payload,
         }),
       });

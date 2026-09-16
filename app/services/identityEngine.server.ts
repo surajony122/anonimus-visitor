@@ -154,12 +154,13 @@ export class IdentityEngine {
 
     let matchedCustomer: { shopifyCustomerId: string; emailReference?: string } | undefined;
 
-    if (type === "email" || type === "shopify_customer") {
+    if (type === "email" || type === "shopify_customer" || type === "phone") {
       const customer = await prisma.shopifyCustomer.findFirst({
         where: {
           shopId,
           OR: [
             { emailReference: normalizedValue },
+            { phoneReference: normalizedValue },
             { shopifyCustomerId: rawValue },
           ],
         },
@@ -181,13 +182,13 @@ export class IdentityEngine {
           },
           update: {
             confidenceScore: 100,
-            matchMethod: type === "email" ? "email_exact" : "authenticated_account",
+            matchMethod: type === "email" ? "email_exact" : type === "phone" ? "phone_exact" : "authenticated_account",
           },
           create: {
             shopId,
             visitorId,
             shopifyCustomerId: customer.shopifyCustomerId,
-            matchMethod: type === "email" ? "email_exact" : "authenticated_account",
+            matchMethod: type === "email" ? "email_exact" : type === "phone" ? "phone_exact" : "authenticated_account",
             confidenceScore: 100,
           },
         });
@@ -202,7 +203,7 @@ export class IdentityEngine {
             confidence: 100,
             metadata: JSON.stringify({
               shopifyCustomerId: customer.shopifyCustomerId,
-              method: type === "email" ? "email_exact" : "authenticated_account",
+              method: type === "email" ? "email_exact" : type === "phone" ? "phone_exact" : "authenticated_account",
             }),
           },
         });

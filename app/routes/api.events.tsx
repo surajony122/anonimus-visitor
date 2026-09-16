@@ -2,6 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
 import { processVisitorIntentAndTriggers } from "../services/intentEngine.server";
+import { IdentityEngine } from "../services/identityEngine.server";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -66,6 +67,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       collection_id,
       cart_id,
       metadata,
+      device,
+      email,
+      phone,
+      login_id,
     } = body;
 
     if (!visitor_id || !event_type) {
@@ -73,6 +78,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
+
+    // Determine device & browser characteristics
+    const deviceCategory = device?.deviceCategory || metadata?.deviceCategory || (device?.isMobile ? "mobile" : "desktop");
+    const clientMeta = {
+      browser: device?.browser || metadata?.browser || "Unknown Browser",
+      browserVersion: device?.browserVersion || metadata?.browserVersion || "",
+      os: device?.os || metadata?.os || "Unknown OS",
+      screenResolution: device?.screenResolution || metadata?.screenResolution || "",
+      language: device?.language || metadata?.language || "en",
+      timezone: device?.timezone || metadata?.timezone || "UTC",
+      storageAvailable: device?.storageAvailable || true,
+      lastLoginId: login_id || metadata?.loginId || null,
+    };
 
     let visitor = await prisma.visitor.findUnique({
       where: {
@@ -88,14 +106,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           status: "anonymous",
           firstSeenAt: eventTimestamp,
           lastSeenAt: eventTimestamp,
-          deviceCategory: "desktop",
+          deviceCategory: deviceCategory || "desktop",
+          metadata: JSON.stringify(clientMeta),
         },
       });
     } else {
+      let existingMeta = {};
+      try {
+        if (visitor.metadata) existingMeta = JSON.parse(visitor.metadata);
+      } catch {}
+      const mergedMeta = { ...existingMeta, ...clientMeta };
+
       await prisma.visitor.update({
         where: { id: visitor.id },
-        data: { lastSeenAt: eventTimestamp },
+        data: {
+          lastSeenAt: eventTimestamp,
+          deviceCategory: deviceCategory || visitor.deviceCategory || "desktop",
+          metadata: JSON.stringify(mergedMeta),
+        },
       });
+    }
+
+    // Auto-stitch identity if email, phone, or login_id are attached to this event
+    const emailToIdentify = email || metadata?.email || metadata?.context?.email;
+    const phoneToIdentify = phone || metadata?.phone || metadata?.context?.phone;
+
+    if (emailToIdentify && emailToIdentify.includes("@")) {
+      IdentityEngine.identify({
+        shopId,
+        visitorId: visitor_id,
+        type: "email",
+        rawValue: emailToIdentify,
+        source: metadata?.identity_source || "storefront_autofill",
+      }).catch((e) => console.warn("Auto-identity email error:", e.message));
+    }
+
+    if (phoneToIdentify && phoneToIdentify.length >= 7) {
+      IdentityEngine.identify({
+        shopId,
+        visitorId: visitor_id,
+        type: "phone",
+        rawValue: phoneToIdentify,
+        source: metadata?.identity_source || "storefront_autofill",
+      }).catch((e) => console.warn("Auto-identity phone error:", e.message));
     }
 
     const event = await prisma.event.create({

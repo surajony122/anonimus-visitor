@@ -1,4 +1,4 @@
-﻿import { register } from "@shopify/web-pixels-extension";
+import { register } from "@shopify/web-pixels-extension";
 
 register(({ analytics, browser, init, settings }) => {
   const DEFAULT_ENDPOINT = "https://nitro-shopify-visitor-intelligence.onrender.com/api/events";
@@ -75,6 +75,37 @@ register(({ analytics, browser, init, settings }) => {
       if (checkoutEmail) identify("email", checkoutEmail, "checkout_step", shopDomain);
       if (checkoutPhone) identify("phone", checkoutPhone, "checkout_step", shopDomain);
 
+      // 3. Extract device & browser intelligence
+      const nav = (browser as any)?.navigator || {};
+      const doc = eventData.context?.document || {};
+      const win = eventData.context?.window || {};
+
+      const userAgent = nav.userAgent || "";
+      let browserName = "Chrome";
+      if (userAgent.includes("Safari") && !userAgent.includes("Chrome")) browserName = "Safari";
+      else if (userAgent.includes("Firefox")) browserName = "Firefox";
+      else if (userAgent.includes("Edg")) browserName = "Edge";
+      else if (userAgent.includes("Opera") || userAgent.includes("OPR")) browserName = "Opera";
+
+      let osName = "Desktop OS";
+      if (userAgent.includes("iPhone") || userAgent.includes("iPad")) osName = "iOS";
+      else if (userAgent.includes("Android")) osName = "Android";
+      else if (userAgent.includes("Windows")) osName = "Windows";
+      else if (userAgent.includes("Mac OS")) osName = "macOS";
+      else if (userAgent.includes("Linux")) osName = "Linux";
+
+      const isMobile = osName === "iOS" || osName === "Android" || /Mobi|Android/i.test(userAgent);
+
+      const devicePayload = {
+        deviceCategory: isMobile ? "mobile" : "desktop",
+        browser: browserName,
+        os: osName,
+        language: nav.language || "en",
+        screenResolution: win.screen ? `${win.screen.width}x${win.screen.height}` : "1920x1080",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        storageAvailable: true,
+      };
+
       const payload = {
         visitor_id: visitorId,
         event_type: eventType,
@@ -86,8 +117,10 @@ register(({ analytics, browser, init, settings }) => {
         variant_id: eventData.data?.productVariant?.id,
         collection_id: eventData.data?.collection?.id,
         cart_id: eventData.data?.cart?.id || eventData.data?.checkout?.id,
+        device: devicePayload,
         metadata: {
           clientId: eventData.clientId,
+          device: devicePayload,
           ...eventData.data,
         },
       };
