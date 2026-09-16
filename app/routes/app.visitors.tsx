@@ -1,4 +1,4 @@
-﻿import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "@remix-run/react";
 import React, { useState } from "react";
@@ -188,6 +188,7 @@ export default function VisitorsList() {
 
   return (
     <Page
+      fullWidth
       title={
         <InlineStack gap="200" align="center">
           <Icon name="ic-users" size={22} color="var(--accent)" />

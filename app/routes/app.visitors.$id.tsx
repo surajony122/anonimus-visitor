@@ -157,6 +157,7 @@ export default function VisitorDetailRoute() {
 
   return (
     <Page
+      fullWidth
       title={
         isIdentified
           ? customer?.firstName

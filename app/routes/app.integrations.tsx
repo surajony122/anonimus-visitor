@@ -1,4 +1,4 @@
-﻿import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useActionData, useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
 import React, { useState } from "react";
@@ -266,6 +266,7 @@ export default function IntegrationsRoute() {
 
   return (
     <Page
+      fullWidth
       title={
         <InlineStack gap="200" align="center">
           <Icon name="ic-webhook" size={24} color="var(--accent)" />

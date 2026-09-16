@@ -136,7 +136,13 @@ export default function SimulatorRoute() {
 
   return (
     <Page
-      title="Live Storefront & Identity Simulator"
+      fullWidth
+      title={
+        <InlineStack gap="200" align="center">
+          <Icon name="ic-activity" size={24} color="var(--accent)" />
+          <span>Live Storefront & Identity Simulator</span>
+        </InlineStack>
+      }
       subtitle="Step-by-step interactive simulator showing the transition from anonymous browsing to identified customer"
       primaryAction={{
         content: "New Anonymous Visitor",
