@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "6d9dfcd955aea14d2eb2207fe167bfa9"
-name = "Nitro Visitor Intelligence (Backup)"
-handle = "nitro-visitor-intelligence-backup"
+client_id = "08c1bee40e8e29bed9918a0b8ac2dacd"
+name = "nitro 2 backup"
+handle = "nitro-2-backup"
 application_url = "https://nitro-shopify-visitor-intelligence.onrender.com"
 embedded = true
 
