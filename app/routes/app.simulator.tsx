@@ -17,6 +17,7 @@ import {
   TextField,
 } from "@shopify/polaris";
 import { v4 as uuidv4 } from "uuid";
+import { Icon } from "../components/Icon";
 
 export const loader = async () => {
   return json({});
