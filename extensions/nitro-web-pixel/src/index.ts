@@ -1,7 +1,8 @@
-import { register } from "@shopify/web-pixels-extension";
+﻿import { register } from "@shopify/web-pixels-extension";
 
 register(({ analytics, browser, init, settings }) => {
   const DEFAULT_ENDPOINT = "https://nitro-shopify-visitor-intelligence.onrender.com/api/events";
+  const DEFAULT_IDENTIFY_ENDPOINT = "https://nitro-shopify-visitor-intelligence.onrender.com/api/identity/identify";
   const STORAGE_KEY = "_nitro_vid";
 
   function generateUUID(): string {
@@ -25,17 +26,60 @@ register(({ analytics, browser, init, settings }) => {
     }
   }
 
+  async function identify(type: "email" | "phone", value: string, source: string, shopDomain: string) {
+    if (!value || !value.trim()) return;
+    try {
+      const visitorId = await getVisitorId();
+      fetch(DEFAULT_IDENTIFY_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-shopify-shop-domain": shopDomain,
+        },
+        body: JSON.stringify({
+          visitor_id: visitorId,
+          type,
+          value: value.trim(),
+          source,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  }
+
   async function sendEvent(eventType: string, eventData: any) {
     try {
       const visitorId = await getVisitorId();
       const endpoint = (init.data.accountConfig as any)?.appEndpoint || DEFAULT_ENDPOINT;
       const shopDomain = (init.data.accountConfig as any)?.shopDomain || eventData?.context?.document?.location?.host;
+      const href = eventData.context?.document?.location?.href || "";
+
+      // 1. Check for URL parameters (Instant silent capture without form submission)
+      try {
+        if (href.includes("?")) {
+          const urlParams = new URL(href).searchParams;
+          const urlEmail = urlParams.get("email") || urlParams.get("utm_email") || urlParams.get("contact");
+          const urlPhone = urlParams.get("phone") || urlParams.get("tel") || urlParams.get("whatsapp");
+          if (urlEmail && urlEmail.includes("@")) {
+            identify("email", urlEmail, "url_campaign_parameter", shopDomain);
+          }
+          if (urlPhone && urlPhone.length >= 7) {
+            identify("phone", urlPhone, "url_campaign_parameter", shopDomain);
+          }
+        }
+      } catch {}
+
+      // 2. Check checkout payload for email / phone
+      const checkoutEmail = eventData.data?.checkout?.email || eventData.data?.customer?.email;
+      const checkoutPhone = eventData.data?.checkout?.phone || eventData.data?.customer?.phone;
+      if (checkoutEmail) identify("email", checkoutEmail, "checkout_step", shopDomain);
+      if (checkoutPhone) identify("phone", checkoutPhone, "checkout_step", shopDomain);
 
       const payload = {
         visitor_id: visitorId,
         event_type: eventType,
         timestamp: eventData.timestamp || new Date().toISOString(),
-        page_url: eventData.context?.document?.location?.href,
+        page_url: href,
         product_id:
           eventData.data?.productVariant?.product?.id ||
           eventData.data?.checkout?.lineItems?.[0]?.variant?.product?.id,

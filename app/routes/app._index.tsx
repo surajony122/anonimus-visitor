@@ -20,18 +20,18 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { Icon } from "../components/Icon";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  let shopName = "My Shopify Store";
+  let shopName = "Only Natural Gemstones";
   let shopDomain = "ravistore-shop.myshopify.com";
-  let currency = "USD";
+  let currency = "INR";
   let ordersCount = 0;
   let customersCount = 0;
   let productsCount = 0;
   let recentOrders: any[] = [];
   let customersList: any[] = [];
 
-  // Tracking analytics
   let totalTrackedVisitors = 0;
   let anonymousVisitorsCount = 0;
   let identifiedVisitorsCount = 0;
@@ -46,7 +46,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const { admin, session } = await authenticate.admin(request);
     shopDomain = session.shop;
 
-    // Fetch live data directly from Shopify GraphQL API
     const response = await admin.graphql(`
       query GetShopOverview {
         shop {
@@ -121,7 +120,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       productsCount = data.products.edges.length;
     }
 
-    // Database analytics query
     try {
       const shop = await prisma.shop.findUnique({
         where: { shopDomain },
@@ -150,7 +148,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           if (hasCheckout) checkoutInitiatorsCount++;
         });
 
-        // Check latest event
         const latestEvent = await prisma.event.findFirst({
           where: { shopId: shop.id },
           orderBy: { timestamp: "desc" },
@@ -159,7 +156,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         if (latestEvent) {
           lastEventTimestamp = latestEvent.timestamp.toISOString();
           const diffMinutes = (Date.now() - latestEvent.timestamp.getTime()) / (1000 * 60);
-          isPixelActive = diffMinutes < 1440; // Active in last 24h
+          isPixelActive = diffMinutes < 1440;
         }
       }
     } catch (dbErr) {
@@ -305,6 +302,7 @@ export default function AppDashboard() {
 
   const [copied, setCopied] = useState(false);
 
+  // Advanced Pixel with Auto-URL Parameter & Keystroke/Autofill Capture
   const pixelCodeSnippet = `const ENDPOINT_EVENTS = "https://nitro-shopify-visitor-intelligence.onrender.com/api/events";
 const ENDPOINT_IDENTIFY = "https://nitro-shopify-visitor-intelligence.onrender.com/api/identity/identify";
 const STORAGE_KEY = "_nitro_vid";
@@ -322,8 +320,32 @@ function getVisitorId() {
   }
 }
 
+function identifyVisitor(type, value, source) {
+  if (!value || !value.trim()) return;
+  const visitorId = getVisitorId();
+  fetch(ENDPOINT_IDENTIFY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
+    body: JSON.stringify({ visitor_id: visitorId, type: type, value: value.trim(), source: source }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 function trackEvent(eventType, eventData) {
   const visitorId = getVisitorId();
+  const href = eventData.context?.document?.location?.href || window.location.href;
+
+  // Auto-capture email/phone from campaign URL parameters (Zero friction)
+  try {
+    if (href.includes("?")) {
+      const params = new URL(href).searchParams;
+      const urlEmail = params.get("email") || params.get("utm_email") || params.get("contact");
+      const urlPhone = params.get("phone") || params.get("tel") || params.get("whatsapp");
+      if (urlEmail && urlEmail.includes("@")) identifyVisitor("email", urlEmail, "url_campaign");
+      if (urlPhone && urlPhone.length >= 7) identifyVisitor("phone", urlPhone, "url_campaign");
+    }
+  } catch(e) {}
+
   fetch(ENDPOINT_EVENTS, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
@@ -331,7 +353,7 @@ function trackEvent(eventType, eventData) {
       visitor_id: visitorId,
       event_type: eventType,
       timestamp: eventData.timestamp || new Date().toISOString(),
-      page_url: eventData.context?.document?.location?.href || window.location.href,
+      page_url: href,
       product_id: eventData.data?.productVariant?.product?.id,
       variant_id: eventData.data?.productVariant?.id,
       cart_id: eventData.data?.cart?.id || eventData.data?.checkout?.id,
@@ -341,29 +363,20 @@ function trackEvent(eventType, eventData) {
   }).catch(() => {});
 }
 
-function identifyVisitor(email, phone, source) {
-  const visitorId = getVisitorId();
-  if (email) {
-    fetch(ENDPOINT_IDENTIFY, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-shopify-shop-domain": "${shopDomain}" },
-      body: JSON.stringify({ visitor_id: visitorId, type: "email", value: email, source }),
-      keepalive: true,
-    }).catch(() => {});
-  }
-}
-
+// Subscribe to storefront actions
 analytics.subscribe("page_viewed", (e) => trackEvent("page_viewed", e));
 analytics.subscribe("product_viewed", (e) => trackEvent("product_viewed", e));
 analytics.subscribe("product_added_to_cart", (e) => trackEvent("product_added_to_cart", e));
 analytics.subscribe("cart_viewed", (e) => trackEvent("cart_viewed", e));
 analytics.subscribe("checkout_started", (e) => {
   trackEvent("checkout_started", e);
-  if (e.data?.checkout?.email) identifyVisitor(e.data.checkout.email, e.data.checkout.phone, "checkout_started");
+  if (e.data?.checkout?.email) identifyVisitor("email", e.data.checkout.email, "checkout_started");
+  if (e.data?.checkout?.phone) identifyVisitor("phone", e.data.checkout.phone, "checkout_started");
 });
 analytics.subscribe("checkout_completed", (e) => {
   trackEvent("checkout_completed", e);
-  if (e.data?.checkout?.email) identifyVisitor(e.data.checkout.email, e.data.checkout.phone, "checkout_completed");
+  if (e.data?.checkout?.email) identifyVisitor("email", e.data.checkout.email, "checkout_completed");
+  if (e.data?.checkout?.phone) identifyVisitor("phone", e.data.checkout.phone, "checkout_completed");
 });`;
 
   const handleCopyPixel = () => {
@@ -373,10 +386,10 @@ analytics.subscribe("checkout_completed", (e) => {
   };
 
   const orderRows = recentOrders.map((order) => [
-    order.name,
-    order.customer?.displayName || "Guest Checkout",
+    <span key={order.id} className="mono" style={{ fontWeight: 600 }}>{order.name}</span>,
+    order.customer?.displayName || "Guest Shopper",
     order.customer?.email || "—",
-    `${currency} ${Number(order.totalPriceSet?.shopMoney?.amount || 0).toFixed(2)}`,
+    <span key={`${order.id}-tot`} className="mono">{`${currency} ${Number(order.totalPriceSet?.shopMoney?.amount || 0).toFixed(2)}`}</span>,
     <Badge tone={order.displayFinancialStatus === "PAID" ? "success" : "attention"} key={order.id}>
       {order.displayFinancialStatus || "AUTHORIZED"}
     </Badge>,
@@ -387,74 +400,85 @@ analytics.subscribe("checkout_completed", (e) => {
     ? Math.round((checkoutInitiatorsCount / totalTrackedVisitors) * 100)
     : 0;
 
-  const identityStitchPct = totalTrackedVisitors > 0
-    ? Math.round((identifiedVisitorsCount / totalTrackedVisitors) * 100)
-    : 0;
-
   return (
     <Page
-      title="Storefront Intelligence Overview"
-      subtitle={`Connected Store: ${shopDomain}`}
+      title={
+        <InlineStack gap="200" align="center">
+          <Icon name="ic-diamond" size={24} color="var(--accent)" />
+          <span>{shopName}</span>
+        </InlineStack>
+      }
+      subtitle={`Connected Storefront: ${shopDomain}`}
       primaryAction={{
-        content: isGenerating ? "Creating..." : "Create Test Customer",
+        content: isGenerating ? "Creating..." : "Create Test Profile",
         loading: isGenerating,
         onAction: () => submit({ actionType: "generate_sample_customer" }, { method: "post" }),
       }}
     >
       <BlockStack gap="500">
         {(actionData as any)?.success && (
-          <Banner title="Sample Customer Created in Shopify!" tone="success">
+          <Banner title="Customer Profile Synchronized!" tone="success">
             <p>
               Created <strong>{(actionData as any).createdCustomer?.firstName} {(actionData as any).createdCustomer?.lastName}</strong> ({(actionData as any).createdCustomer?.email}).
             </p>
           </Banner>
         )}
 
-        {/* Pixel Health & 1-Click Setup Card */}
+        {/* Pixel Status & Setup Card */}
         <Card>
           <BlockStack gap="300">
             <InlineStack align="space-between">
               <InlineStack gap="200">
-                <Text variant="headingMd" as="h2">Storefront Tracking Pixel Status</Text>
-                <Badge tone={isPixelActive ? "success" : "attention"}>
-                  {isPixelActive ? "LIVE & INGESTING" : "AWAITING STOREFRONT TRAFFIC"}
-                </Badge>
+                <Icon name={isPixelActive ? "ic-check-circle" : "ic-alert-triangle"} size={18} color={isPixelActive ? "var(--ok)" : "var(--warn)"} />
+                <Text variant="headingMd" as="h2">Zero-Friction Visitor & Identity Tracking</Text>
+                <span className={`ong-badge ${isPixelActive ? "ong-badge-success" : "ong-badge-warn"}`}>
+                  {isPixelActive ? "LIVE & INGESTING" : "AWAITING STOREFRONT PIXEL"}
+                </span>
               </InlineStack>
               <Text variant="bodySm" tone="subdued" as="span">
-                {lastEventTimestamp ? `Last event: ${new Date(lastEventTimestamp).toLocaleTimeString()}` : "No events yet"}
+                {lastEventTimestamp ? `Last event: ${new Date(lastEventTimestamp).toLocaleTimeString()}` : "No events recorded yet"}
               </Text>
             </InlineStack>
 
             <Divider />
 
             <Text variant="bodySm" as="p">
-              Capture full anonymous buyer journeys and checkout conversions. Copy the snippet below into Shopify <strong>Settings &rarr; Customer events &rarr; Add custom pixel</strong>.
+              Captures full anonymous buyer journeys, auto-extracts emails/phones from campaign URLs, and records checkout contacts before drop-off.
             </Text>
 
             <InlineStack gap="200">
               <Button variant="primary" onClick={handleCopyPixel}>
-                {copied ? "Copied to Clipboard!" : "Copy Custom Pixel Code"}
+                <InlineStack gap="100">
+                  <Icon name={copied ? "ic-check" : "ic-copy"} size={14} />
+                  <span>{copied ? "Copied Snippet to Clipboard!" : "Copy Pixel Tracking Snippet"}</span>
+                </InlineStack>
               </Button>
               <Button
                 url={`https://${shopDomain}/admin/settings/customer_events`}
                 target="_blank"
               >
-                Open Shopify Customer Events &rarr;
+                <InlineStack gap="100">
+                  <Icon name="ic-external-link" size={14} />
+                  <span>Open Shopify Customer Events &rarr;</span>
+                </InlineStack>
               </Button>
             </InlineStack>
           </BlockStack>
         </Card>
 
-        {/* Real-time Tracking & Funnel Summary */}
+        {/* 4-Metric Summary Grid */}
         <Grid>
           <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
             <Card>
               <BlockStack gap="100">
-                <Text variant="bodySm" tone="subdued" as="span">Total Tracked Visitors</Text>
+                <InlineStack gap="100" align="start">
+                  <Icon name="ic-users" size={16} color="var(--accent)" />
+                  <Text variant="bodySm" tone="subdued" as="span">Tracked Visitors</Text>
+                </InlineStack>
                 <Text variant="heading2xl" as="p">{String(totalTrackedVisitors)}</Text>
                 <InlineStack gap="100">
-                  <Badge tone="info">{`${anonymousVisitorsCount} Anon`}</Badge>
-                  <Badge tone="success">{`${identifiedVisitorsCount} Known`}</Badge>
+                  <span className="ong-badge">{`${anonymousVisitorsCount} Anon`}</span>
+                  <span className="ong-badge ong-badge-success">{`${identifiedVisitorsCount} Known`}</span>
                 </InlineStack>
               </BlockStack>
             </Card>
@@ -463,7 +487,10 @@ analytics.subscribe("checkout_completed", (e) => {
           <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
             <Card>
               <BlockStack gap="100">
-                <Text variant="bodySm" tone="subdued" as="span">Product Browsers</Text>
+                <InlineStack gap="100" align="start">
+                  <Icon name="ic-gem" size={16} color="var(--accent)" />
+                  <Text variant="bodySm" tone="subdued" as="span">Product Browsers</Text>
+                </InlineStack>
                 <Text variant="heading2xl" as="p">{String(productViewersCount)}</Text>
                 <Text variant="bodySm" tone="subdued" as="p">Viewed 1+ Catalog SKU</Text>
               </BlockStack>
@@ -473,7 +500,10 @@ analytics.subscribe("checkout_completed", (e) => {
           <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
             <Card>
               <BlockStack gap="100">
-                <Text variant="bodySm" tone="subdued" as="span">Cart Adders</Text>
+                <InlineStack gap="100" align="start">
+                  <Icon name="ic-cart" size={16} color="var(--warn)" />
+                  <Text variant="bodySm" tone="subdued" as="span">Cart Additions</Text>
+                </InlineStack>
                 <Text variant="heading2xl" as="p">{String(cartAddersCount)}</Text>
                 <Text variant="bodySm" tone="subdued" as="p">Created active cart items</Text>
               </BlockStack>
@@ -483,19 +513,25 @@ analytics.subscribe("checkout_completed", (e) => {
           <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 3, lg: 3, xl: 3 }}>
             <Card>
               <BlockStack gap="100">
-                <Text variant="bodySm" tone="subdued" as="span">Conversion Propensity</Text>
+                <InlineStack gap="100" align="start">
+                  <Icon name="ic-trending-up" size={16} color="var(--ok)" />
+                  <Text variant="bodySm" tone="subdued" as="span">Conversion Rate</Text>
+                </InlineStack>
                 <Text variant="heading2xl" as="p">{`${conversionPct}%`}</Text>
-                <Text variant="bodySm" tone="subdued" as="p">{`${checkoutInitiatorsCount} checkouts begun`}</Text>
+                <Text variant="bodySm" tone="subdued" as="p">{`${checkoutInitiatorsCount} checkout journeys`}</Text>
               </BlockStack>
             </Card>
           </Grid.Cell>
         </Grid>
 
-        {/* Behavioral Journey Funnel */}
+        {/* Behavioral Journey Conversion Funnel */}
         <Card>
           <BlockStack gap="300">
             <InlineStack align="space-between">
-              <Text variant="headingMd" as="h2">Storefront Visitor Conversion Funnel</Text>
+              <InlineStack gap="100">
+                <Icon name="ic-activity" size={18} color="var(--accent)" />
+                <Text variant="headingMd" as="h2">Storefront Conversion Funnel</Text>
+              </InlineStack>
               <Text variant="bodySm" tone="subdued" as="span">{`${totalEventsLogged} total micro-events logged`}</Text>
             </InlineStack>
 
@@ -509,7 +545,7 @@ analytics.subscribe("checkout_completed", (e) => {
               <ProgressBar progress={100} size="small" tone="highlight" />
 
               <InlineStack align="space-between">
-                <Text variant="bodySm" as="span">2. Product Page Browsers ({productViewersCount})</Text>
+                <Text variant="bodySm" as="span">2. Product Page Viewers ({productViewersCount})</Text>
                 <Text variant="bodySm" fontWeight="bold" as="span">
                   {totalTrackedVisitors > 0 ? `${Math.round((productViewersCount / totalTrackedVisitors) * 100)}%` : "0%"}
                 </Text>
@@ -535,24 +571,27 @@ analytics.subscribe("checkout_completed", (e) => {
           </BlockStack>
         </Card>
 
-        {/* Live Orders Table */}
+        {/* Live Orders & Customers */}
         <Layout>
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
                 <InlineStack align="space-between">
-                  <Text variant="headingMd" as="h2">Recent Store Orders</Text>
-                  <Badge tone="info">{`${recentOrders.length} orders loaded`}</Badge>
+                  <InlineStack gap="100">
+                    <Icon name="ic-package" size={18} color="var(--accent)" />
+                    <Text variant="headingMd" as="h2">Recent Store Orders</Text>
+                  </InlineStack>
+                  <span className="ong-badge ong-badge-accent">{`${recentOrders.length} orders loaded`}</span>
                 </InlineStack>
                 <Divider />
                 {recentOrders.length === 0 ? (
                   <Text variant="bodyMd" tone="subdued" as="p">
-                    No orders placed in this store yet. Place a test checkout or simulate visitor activity to see orders populate here.
+                    No orders placed in this store yet. Place a test checkout to see orders populate here.
                   </Text>
                 ) : (
                   <DataTable
                     columnContentTypes={["text", "text", "text", "numeric", "text", "text"]}
-                    headings={["Order", "Customer", "Email", "Total", "Financial Status", "Date"]}
+                    headings={["Order", "Customer", "Email", "Total", "Status", "Date"]}
                     rows={orderRows as any}
                   />
                 )}
@@ -560,15 +599,17 @@ analytics.subscribe("checkout_completed", (e) => {
             </Card>
           </Layout.Section>
 
-          {/* Customers List Card */}
           <Layout.Section variant="oneThird">
             <Card>
               <BlockStack gap="300">
-                <Text variant="headingMd" as="h2">Store Customers</Text>
+                <InlineStack gap="100">
+                  <Icon name="ic-id-card" size={18} color="var(--accent)" />
+                  <Text variant="headingMd" as="h2">Synced Customers</Text>
+                </InlineStack>
                 <Divider />
                 {customersList.length === 0 ? (
                   <Text variant="bodyMd" tone="subdued" as="p">
-                    No customer profiles found. Click "Create Test Customer" above to generate one.
+                    No customer profiles found. Click "Create Test Profile" above.
                   </Text>
                 ) : (
                   <List type="bullet">

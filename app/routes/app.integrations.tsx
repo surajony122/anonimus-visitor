@@ -21,6 +21,7 @@ import {
 import prisma from "../db.server";
 import { WebhookDispatcher } from "../services/webhookDispatcher.server";
 import { authenticate } from "../shopify.server";
+import { Icon } from "../components/Icon";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopDomain = "ravistore-shop.myshopify.com";
@@ -61,7 +62,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         createdAt: ep.createdAt.toISOString(),
       }));
 
-      // Gather recent logs across endpoints
       const allLogs = await prisma.webhookDeliveryLog.findMany({
         where: {
           webhookEndpoint: { shopId: shop.id },
@@ -225,22 +225,25 @@ export default function IntegrationsRoute() {
       <Text variant="bodyMd" fontWeight="bold" as="span">{ep.name}</Text>
       <Text variant="bodySm" tone="subdued" as="span">{ep.url}</Text>
     </BlockStack>,
-    <Badge key={`${ep.id}-trigger`} tone="info">
+    <span key={`${ep.id}-trigger`} className="ong-badge ong-badge-accent">
       {ep.triggerOn.replace(/_/g, " ").toUpperCase()}
-    </Badge>,
-    <Badge key={`${ep.id}-status`} tone={ep.isActive ? "success" : undefined}>
+    </span>,
+    <span key={`${ep.id}-status`} className={`ong-badge ${ep.isActive ? "ong-badge-success" : ""}`}>
       {ep.isActive ? "ACTIVE" : "PAUSED"}
-    </Badge>,
+    </span>,
     ep.lastTriggeredAt ? new Date(ep.lastTriggeredAt).toLocaleString() : "Never",
     <InlineStack key={`${ep.id}-actions`} gap="200">
       <Button size="slim" onClick={() => handleTest(ep.id)} loading={isSubmitting}>
-        Send Test Payload
+        <InlineStack gap="100">
+          <Icon name="ic-send" size={14} />
+          <span>Send Test</span>
+        </InlineStack>
       </Button>
       <Button size="slim" onClick={() => handleToggle(ep.id, ep.isActive)}>
         {ep.isActive ? "Pause" : "Resume"}
       </Button>
       <Button size="slim" tone="critical" onClick={() => handleDelete(ep.id)}>
-        Delete
+        <Icon name="ic-trash" size={14} color="var(--danger)" />
       </Button>
     </InlineStack>,
   ]);
@@ -253,9 +256,9 @@ export default function IntegrationsRoute() {
       {log.endpointName}
     </Text>,
     <Badge key={`${log.id}-trigger`}>{log.trigger}</Badge>,
-    <Badge key={`${log.id}-status`} tone={log.success ? "success" : "critical"}>
+    <span key={`${log.id}-status`} className={`ong-badge ${log.success ? "ong-badge-success" : "ong-badge-danger"}`}>
       {log.status ? `HTTP ${log.status}` : "FAILED"}
-    </Badge>,
+    </span>,
     <Text key={`${log.id}-resp`} variant="bodySm" tone="subdued" as="span" truncate>
       {log.response || (log.success ? "OK" : "No response")}
     </Text>,
@@ -263,7 +266,12 @@ export default function IntegrationsRoute() {
 
   return (
     <Page
-      title="Marketing Integrations & Webhooks"
+      title={
+        <InlineStack gap="200" align="center">
+          <Icon name="ic-webhook" size={24} color="var(--accent)" />
+          <span>Marketing Integrations & Webhooks</span>
+        </InlineStack>
+      }
       subtitle="Connect Nitro intelligence triggers to Zapier, Klaviyo, WhatsApp, Make.com, or custom APIs"
     >
       <BlockStack gap="400">
@@ -301,7 +309,7 @@ export default function IntegrationsRoute() {
               <BlockStack gap="300">
                 {logs.length === 0 ? (
                   <Text variant="bodyMd" tone="subdued" as="p">
-                    No webhook deliveries logged yet. Click "Send Test Payload" above to verify connectivity.
+                    No webhook deliveries logged yet. Click "Send Test" above to verify connectivity.
                   </Text>
                 ) : (
                   <DataTable
@@ -356,7 +364,10 @@ export default function IntegrationsRoute() {
                 />
 
                 <Button variant="primary" fullWidth onClick={handleCreate} disabled={!url} loading={isSubmitting}>
-                  Save & Activate Webhook
+                  <InlineStack gap="100" align="center">
+                    <Icon name="ic-check" size={16} />
+                    <span>Save & Activate Webhook</span>
+                  </InlineStack>
                 </Button>
               </BlockStack>
             </LegacyCard>
@@ -366,7 +377,7 @@ export default function IntegrationsRoute() {
                 <Text variant="headingXs" as="h4">Instant Recovery Actions</Text>
                 <List type="bullet">
                   <List.Item>
-                    <strong>WhatsApp Alert:</strong> Ping sales rep when a visitor has Very High Intent with $200+ in cart.
+                    <strong>WhatsApp Alert:</strong> Ping sales rep when a visitor has Very High Intent with ₹15,000+ in cart.
                   </List.Item>
                   <List.Item>
                     <strong>Klaviyo Flow:</strong> Add identified visitor to "Hot VIP Browsers" list with their viewed product.

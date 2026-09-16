@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+﻿import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "@remix-run/react";
 import React, { useState } from "react";
@@ -19,6 +19,7 @@ import {
 import prisma from "../db.server";
 import { calculateIntentScore } from "../services/intentEngine.server";
 import { authenticate } from "../shopify.server";
+import { Icon } from "../components/Icon";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopDomain = "ravistore-shop.myshopify.com";
@@ -27,7 +28,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shopDomain = session.shop;
   } catch (err) {
     if (err instanceof Response) throw err;
-    console.error("DEBUG VISITORS AUTH ERROR:", err);
   }
 
   let visitors: any[] = [];
@@ -160,35 +160,41 @@ export default function VisitorsList() {
     else if (v.intentTier === "medium") intentBadgeTone = "info";
 
     return [
-      <InlineStack gap="200" align="center" key={`id_${v.id}`}>
+      <InlineStack gap="150" align="center" key={`id_${v.id}`}>
+        <Icon name={isIdentified ? "ic-user-check" : "ic-user"} size={16} color={isIdentified ? "var(--ok)" : "var(--faint)"} />
         <Button variant="plain" onClick={() => navigate(`/app/visitors/${v.visitorId}`)}>
           {displayName}
         </Button>
-        <Text variant="bodySm" tone="subdued" as="span">
-          {`(${v.visitorId.substring(0, 8)}...)`}
-        </Text>
+        <span className="mono" style={{ fontSize: "11px", color: "var(--faint)" }}>
+          {`(${v.visitorId.substring(0, 8)})`}
+        </span>
       </InlineStack>,
-      <Badge tone={isIdentified ? "success" : undefined} key={`status_${v.id}`}>
+      <span key={`status_${v.id}`} className={`ong-badge ${isIdentified ? "ong-badge-success" : ""}`}>
         {v.status.toUpperCase()}
-      </Badge>,
+      </span>,
       <InlineStack gap="100" align="center" key={`intent_${v.id}`}>
         <Badge tone={intentBadgeTone}>{`${v.intentScore}/100`}</Badge>
-        <Text variant="bodySm" tone="subdued" as="span">{`(${v.intentTier})`}</Text>
+        <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>{`(${v.intentTier})`}</span>
       </InlineStack>,
       `${v.sessionsCount} sessions`,
       `${v.productsViewedCount} viewed`,
-      v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart` : "—",
+      v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart ($${v.cartValue})` : "—",
       new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       <Button size="slim" onClick={() => navigate(`/app/visitors/${v.visitorId}`)} key={`action_${v.id}`}>
-        View Journey
+        View Journey &rarr;
       </Button>,
     ];
   });
 
   return (
     <Page
-      title="Storefront Visitors"
-      subtitle="Track both anonymous visitors and legitimately identified customer journeys"
+      title={
+        <InlineStack gap="200" align="center">
+          <Icon name="ic-users" size={22} color="var(--accent)" />
+          <span>Storefront Visitors</span>
+        </InlineStack>
+      }
+      subtitle="Track anonymous shoppers, campaign parameters, and automatically stitched customer journeys"
       primaryAction={{
         content: "Simulate Traffic",
         onAction: () => navigate("/app/simulator"),

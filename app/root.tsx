@@ -9,6 +9,14 @@ import {
   useLoaderData,
 } from "@remix-run/react";
 
+import { IconSprite } from "./components/IconSprite";
+import ongStyles from "./styles/ong-theme.css?url";
+
+export const links = () => [
+  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap" },
+  { rel: "stylesheet", href: ongStyles },
+];
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   return json({
     apiKey: process.env.SHOPIFY_API_KEY || "d5b0bf6a64d665d76769762be18281fd",
@@ -28,16 +36,13 @@ export default function App() {
         <link rel="preconnect" href="https://cdn.shopify.com/" />
         <link
           rel="stylesheet"
-          href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css"
-        />
-        <link
-          rel="stylesheet"
           href="https://unpkg.com/@shopify/polaris@12.24.0/build/esm/styles.css"
         />
         <Meta />
         <Links />
       </head>
       <body>
+        <IconSprite />
         <Outlet />
         <ScrollRestoration />
         <Scripts />
