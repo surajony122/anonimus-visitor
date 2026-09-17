@@ -969,6 +969,73 @@ export default function FunnelAnalyticsRoute() {
         {activeTab === "campaigns" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             
+            {/* Live Connection Diagnostic Banner */}
+            {liveMetaCampaigns && liveMetaCampaigns.length > 0 ? (
+              <div style={{
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "12px",
+                color: "#166534",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#22c55e" }} />
+                  <strong>🟢 LIVE META DATA SYNCED:</strong> Showing {liveMetaCampaigns.length} active campaigns from your Ad Account ({metaSettings?.adAccountId || "Connected"}).
+                </div>
+                <span style={{ fontSize: "11px", color: "#15803d", fontWeight: 600 }}>100% Read-Only</span>
+              </div>
+            ) : metaApiError ? (
+              <div style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontSize: "12px",
+                color: "#991b1b",
+              }}>
+                <strong>⚠️ Meta API Notice:</strong> {metaApiError}
+                <div style={{ fontSize: "11px", marginTop: "3px", color: "#b91c1c" }}>
+                  Currently showing demo template preview. Please ensure the token has <code>ads_read</code> permission and the user is assigned to the Ad Account.
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "12px",
+                color: "#475569",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span>📊</span>
+                  <span><strong>Demo Preview Mode:</strong> Connect your Meta Access Token to pull your live campaigns and real ad spend.</span>
+                </div>
+                <button
+                  onClick={() => setIsMetaModalOpen(true)}
+                  style={{
+                    background: "#0f172a",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "4px",
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Connect API
+                </button>
+              </div>
+            )}
+
             {/* Sub-Filter Pill Bar & Summary Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
