@@ -40,241 +40,248 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   try {
     const { admin, session } = await authenticate.admin(request);
-    shopDomain = session.shop;
-
-    const response = await admin.graphql(`
-      query GetShopOverview {
-        shop {
-          name
-          myshopifyDomain
-          currencyCode
-        }
-        orders(first: 10, reverse: true) {
-          edges {
-            node {
-              id
-              name
-              createdAt
-              totalPriceSet {
-                shopMoney {
-                  amount
-                  currencyCode
-                }
-              }
-              displayFinancialStatus
-              displayFulfillmentStatus
-              customer {
-                displayName
-                email
-              }
-            }
-          }
-        }
-        customers(first: 20) {
-          edges {
-            node {
-              id
-              displayName
-              email
-              ordersCount
-              totalSpent
-            }
-          }
-        }
-        products(first: 10) {
-          edges {
-            node {
-              id
-              title
-              status
-            }
-          }
-        }
-      }
-    `);
-
-    const resJson = await response.json();
-    const data = resJson.data;
-
-    if (data?.shop) {
-      shopName = data.shop.name;
-      shopDomain = data.shop.myshopifyDomain;
-      currency = data.shop.currencyCode;
-    }
-
-    if (data?.orders?.edges) {
-      recentOrders = data.orders.edges.map((e: any) => e.node);
-      ordersCount = recentOrders.length;
-    }
-
-    if (data?.customers?.edges) {
-      customersList = data.customers.edges.map((e: any) => e.node);
-      customersCount = customersList.length;
-    }
-
-    if (data?.products?.edges) {
-      productsCount = data.products.edges.length;
+    if (session?.shop) {
+      shopDomain = session.shop;
     }
 
     try {
-      const handle = shopDomain.split(".")[0];
-      const shop = await prisma.shop.findFirst({
-        where: {
-          OR: [
-            { shopDomain },
-            { shopDomain: `${handle}.myshopify.com` },
-            { shopDomain: { startsWith: handle } },
-          ],
-        },
-        include: {
-          visitors: {
-            include: {
-              sessions: true,
-              events: { orderBy: { timestamp: "desc" }, take: 40 },
-              identities: true,
-              customerLinks: { include: { customer: true } },
-            },
-            orderBy: { lastSeenAt: "desc" },
-          },
-        },
-      });
-
-      if (shop) {
-        totalTrackedVisitors = shop.visitors.length;
-        anonymousVisitorsCount = shop.visitors.filter((v) => v.status === "anonymous").length;
-        identifiedVisitorsCount = shop.visitors.filter((v) => v.status === "identified").length;
-
-        shop.visitors.forEach((v) => {
-          totalEventsLogged += v.events.length;
-          const hasPView = v.events.some((e) => e.eventType === "product_viewed");
-          const hasCart = v.events.some((e) => e.eventType === "product_added_to_cart");
-          const hasCheckout = v.events.some((e) => e.eventType === "checkout_started" || e.eventType === "checkout_completed");
-
-          if (hasPView) productViewersCount++;
-          if (hasCart) cartAddersCount++;
-          if (hasCheckout) checkoutInitiatorsCount++;
-        });
-
-        const latestEvent = await prisma.event.findFirst({
-          where: { shopId: shop.id },
-          orderBy: { timestamp: "desc" },
-        });
-
-        if (latestEvent) {
-          lastEventTimestamp = latestEvent.timestamp.toISOString();
-          const diffMinutes = (Date.now() - latestEvent.timestamp.getTime()) / (1000 * 60);
-          isPixelActive = diffMinutes < 1440;
-        } else if (shop.visitors.length > 0) {
-          isPixelActive = true;
-          lastEventTimestamp = shop.visitors[0].lastSeenAt.toISOString();
-        }
-
-        visitorsData = shop.visitors.map((v) => {
-          let clientMeta: any = {};
-          try {
-            if (v.metadata) clientMeta = JSON.parse(v.metadata);
-          } catch {}
-
-          const pViews = v.events.filter((e) => e.eventType === "product_viewed").length;
-          const uniqueProductIds = new Set(
-            v.events
-              .filter((e) => e.eventType === "product_viewed" && e.productId)
-              .map((e) => e.productId!)
-          );
-          const repeatViews = Math.max(0, pViews - uniqueProductIds.size);
-          const cViews = v.events.filter((e) => e.eventType === "collection_viewed").length;
-          const searches = v.events.filter((e) => e.eventType === "search_submitted").length;
-          const addToCart = v.events.filter((e) => e.eventType === "product_added_to_cart").length;
-          const cartViews = v.events.filter((e) => e.eventType === "cart_viewed").length;
-          const checkouts = v.events.filter((e) => e.eventType === "checkout_started").length;
-          const checkoutsCompleted = v.events.filter((e) => e.eventType === "checkout_completed").length;
-
-          let cartVal = 0;
-          v.events.forEach((e) => {
-            if (e.metadata) {
-              try {
-                const meta = JSON.parse(e.metadata);
-                if (meta.cartValue || meta.price) {
-                  cartVal = Math.max(cartVal, Number(meta.cartValue || meta.price || 0));
+      const response = await admin.graphql(`
+        query GetShopOverview {
+          shop {
+            name
+            myshopifyDomain
+            currencyCode
+          }
+          orders(first: 10, reverse: true) {
+            edges {
+              node {
+                id
+                name
+                createdAt
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
                 }
-              } catch {}
+                displayFinancialStatus
+                displayFulfillmentStatus
+                customer {
+                  displayName
+                  email
+                }
+              }
             }
-          });
+          }
+          customers(first: 20) {
+            edges {
+              node {
+                id
+                displayName
+                email
+                ordersCount
+                totalSpent
+              }
+            }
+          }
+          products(first: 10) {
+            edges {
+              node {
+                id
+                title
+                status
+              }
+            }
+          }
+        }
+      `);
 
-          const intent = calculateIntentScore({
-            productViewsCount: pViews,
-            repeatProductViews: repeatViews,
-            collectionViewsCount: cViews,
-            searchesCount: searches,
-            addedToCartCount: addToCart,
-            cartViewedCount: cartViews,
-            cartValue: cartVal,
-            checkoutStartedCount: checkouts,
-            checkoutCompletedCount: checkoutsCompleted,
-            sessionsCount: v.sessions.length || 1,
-          });
+      const resJson = await response.json();
+      const data = resJson.data;
 
-          const emailId = v.identities.find((i) => i.identityType === "email");
-          const phoneId = v.identities.find((i) => i.identityType === "phone");
-          const customer = v.customerLinks[0]?.customer || null;
-
-          const rawDecryptedEmail = emailId?.identityValueEncrypted
-            ? decryptValue(emailId.identityValueEncrypted)
-            : customer?.emailReference || null;
-
-          const rawDecryptedPhone = phoneId?.identityValueEncrypted
-            ? decryptValue(phoneId.identityValueEncrypted)
-            : customer?.phoneReference || null;
-
-          return {
-            id: v.id,
-            visitorId: v.visitorId,
-            status: v.status,
-            firstSeenAt: v.firstSeenAt.toISOString(),
-            lastSeenAt: v.lastSeenAt.toISOString(),
-            deviceCategory: v.deviceCategory || clientMeta.deviceCategory || "desktop",
-            browser: clientMeta.browser || "Chrome / WebKit",
-            os: clientMeta.os || "Windows / macOS",
-            screenResolution: clientMeta.screenResolution || "1920x1080",
-            language: clientMeta.language || "en",
-            timezone: clientMeta.timezone || "Local",
-            storageAvailable: clientMeta.storageAvailable ?? true,
-            sessionsCount: v.sessions.length || 1,
-            productsViewedCount: pViews,
-            cartEventsCount: addToCart,
-            cartValue: cartVal,
-            intentScore: intent.score,
-            intentTier: intent.tier,
-            intentBreakdown: intent.breakdown,
-            primaryEmail: rawDecryptedEmail,
-            primaryPhone: rawDecryptedPhone,
-            identitySource: emailId?.source || phoneId?.source || (customer ? "shopify_sync" : "anonymous_session"),
-            customer: customer
-              ? {
-                  id: customer.shopifyCustomerId,
-                  firstName: customer.firstName,
-                  lastName: customer.lastName,
-                  email: customer.emailReference,
-                  phone: customer.phoneReference,
-                }
-              : null,
-            events: v.events.map((e) => ({
-              id: e.id,
-              eventType: e.eventType,
-              timestamp: e.timestamp.toISOString(),
-              pageUrl: e.pageUrl,
-              productId: e.productId,
-              metadata: e.metadata,
-            })),
-          };
-        });
+      if (data?.shop) {
+        shopName = data.shop.name;
+        if (data.shop.myshopifyDomain) shopDomain = data.shop.myshopifyDomain;
+        currency = data.shop.currencyCode || "INR";
       }
-    } catch (dbErr) {
-      console.warn("Analytics DB query fallback:", dbErr);
+
+      if (data?.orders?.edges) {
+        recentOrders = data.orders.edges.map((e: any) => e.node);
+        ordersCount = recentOrders.length;
+      }
+
+      if (data?.customers?.edges) {
+        customersList = data.customers.edges.map((e: any) => e.node);
+        customersCount = customersList.length;
+      }
+
+      if (data?.products?.edges) {
+        productsCount = data.products.edges.length;
+      }
+    } catch (graphErr) {
+      console.warn("GraphQL query non-blocking warning:", graphErr);
     }
   } catch (err) {
     if (err instanceof Response) throw err;
-    console.error("Loader GraphQL error:", err);
+    console.warn("Admin auth non-blocking:", err);
+  }
+
+  // ALWAYS QUERY DATABASE FOR VISITOR AND EVENT DATA
+  try {
+    const handle = shopDomain.split(".")[0];
+    const shop = await prisma.shop.findFirst({
+      where: {
+        OR: [
+          { shopDomain },
+          { shopDomain: `${handle}.myshopify.com` },
+          { shopDomain: { startsWith: handle } },
+        ],
+      },
+      include: {
+        visitors: {
+          include: {
+            sessions: true,
+            events: { orderBy: { timestamp: "desc" }, take: 40 },
+            identities: true,
+            customerLinks: { include: { customer: true } },
+          },
+          orderBy: { lastSeenAt: "desc" },
+        },
+      },
+    });
+
+    if (shop) {
+      totalTrackedVisitors = shop.visitors.length;
+      anonymousVisitorsCount = shop.visitors.filter((v) => v.status === "anonymous").length;
+      identifiedVisitorsCount = shop.visitors.filter((v) => v.status === "identified").length;
+
+      shop.visitors.forEach((v) => {
+        totalEventsLogged += v.events.length;
+        const hasPView = v.events.some((e) => e.eventType === "product_viewed");
+        const hasCart = v.events.some((e) => e.eventType === "product_added_to_cart");
+        const hasCheckout = v.events.some((e) => e.eventType === "checkout_started" || e.eventType === "checkout_completed");
+
+        if (hasPView) productViewersCount++;
+        if (hasCart) cartAddersCount++;
+        if (hasCheckout) checkoutInitiatorsCount++;
+      });
+
+      const latestEvent = await prisma.event.findFirst({
+        where: { shopId: shop.id },
+        orderBy: { timestamp: "desc" },
+      });
+
+      if (latestEvent) {
+        lastEventTimestamp = latestEvent.timestamp.toISOString();
+        const diffMinutes = (Date.now() - latestEvent.timestamp.getTime()) / (1000 * 60);
+        isPixelActive = diffMinutes < 1440;
+      } else if (shop.visitors.length > 0) {
+        isPixelActive = true;
+        lastEventTimestamp = shop.visitors[0].lastSeenAt.toISOString();
+      }
+
+      visitorsData = shop.visitors.map((v) => {
+        let clientMeta: any = {};
+        try {
+          if (v.metadata) clientMeta = JSON.parse(v.metadata);
+        } catch {}
+
+        const pViews = v.events.filter((e) => e.eventType === "product_viewed").length;
+        const uniqueProductIds = new Set(
+          v.events
+            .filter((e) => e.eventType === "product_viewed" && e.productId)
+            .map((e) => e.productId!)
+        );
+        const repeatViews = Math.max(0, pViews - uniqueProductIds.size);
+        const cViews = v.events.filter((e) => e.eventType === "collection_viewed").length;
+        const searches = v.events.filter((e) => e.eventType === "search_submitted").length;
+        const addToCart = v.events.filter((e) => e.eventType === "product_added_to_cart").length;
+        const cartViews = v.events.filter((e) => e.eventType === "cart_viewed").length;
+        const checkouts = v.events.filter((e) => e.eventType === "checkout_started").length;
+        const checkoutsCompleted = v.events.filter((e) => e.eventType === "checkout_completed").length;
+
+        let cartVal = 0;
+        v.events.forEach((e) => {
+          if (e.metadata) {
+            try {
+              const meta = JSON.parse(e.metadata);
+              if (meta.cartValue || meta.price) {
+                cartVal = Math.max(cartVal, Number(meta.cartValue || meta.price || 0));
+              }
+            } catch {}
+          }
+        });
+
+        const intent = calculateIntentScore({
+          productViewsCount: pViews,
+          repeatProductViews: repeatViews,
+          collectionViewsCount: cViews,
+          searchesCount: searches,
+          addedToCartCount: addToCart,
+          cartViewedCount: cartViews,
+          cartValue: cartVal,
+          checkoutStartedCount: checkouts,
+          checkoutCompletedCount: checkoutsCompleted,
+          sessionsCount: v.sessions.length || 1,
+        });
+
+        const emailId = v.identities.find((i) => i.identityType === "email");
+        const phoneId = v.identities.find((i) => i.identityType === "phone");
+        const customer = v.customerLinks[0]?.customer || null;
+
+        const rawDecryptedEmail = emailId?.identityValueEncrypted
+          ? decryptValue(emailId.identityValueEncrypted)
+          : customer?.emailReference || null;
+
+        const rawDecryptedPhone = phoneId?.identityValueEncrypted
+          ? decryptValue(phoneId.identityValueEncrypted)
+          : customer?.phoneReference || null;
+
+        return {
+          id: v.id,
+          visitorId: v.visitorId,
+          status: v.status,
+          firstSeenAt: v.firstSeenAt.toISOString(),
+          lastSeenAt: v.lastSeenAt.toISOString(),
+          deviceCategory: v.deviceCategory || clientMeta.deviceCategory || "desktop",
+          browser: clientMeta.browser || "Chrome / WebKit",
+          os: clientMeta.os || "Windows / macOS",
+          screenResolution: clientMeta.screenResolution || "1920x1080",
+          language: clientMeta.language || "en",
+          timezone: clientMeta.timezone || "Local",
+          storageAvailable: clientMeta.storageAvailable ?? true,
+          sessionsCount: v.sessions.length || 1,
+          productsViewedCount: pViews,
+          cartEventsCount: addToCart,
+          cartValue: cartVal,
+          intentScore: intent.score,
+          intentTier: intent.tier,
+          intentBreakdown: intent.breakdown,
+          primaryEmail: rawDecryptedEmail,
+          primaryPhone: rawDecryptedPhone,
+          identitySource: emailId?.source || phoneId?.source || (customer ? "shopify_sync" : "anonymous_session"),
+          customer: customer
+            ? {
+                id: customer.shopifyCustomerId,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                email: customer.emailReference,
+                phone: customer.phoneReference,
+              }
+            : null,
+          events: v.events.map((e) => ({
+            id: e.id,
+            eventType: e.eventType,
+            timestamp: e.timestamp.toISOString(),
+            pageUrl: e.pageUrl,
+            productId: e.productId,
+            metadata: e.metadata,
+          })),
+        };
+      });
+    }
+  } catch (dbErr) {
+    console.warn("Analytics DB query fallback:", dbErr);
   }
 
   return json({
