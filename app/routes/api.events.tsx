@@ -30,17 +30,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    const shopDomain =
-      request.headers.get("x-shopify-shop-domain") || "ravistore-shop.myshopify.com";
+    const rawHeaderDomain = request.headers.get("x-shopify-shop-domain") || "";
+    const cleanDomain = rawHeaderDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase().trim();
+    const handle = cleanDomain.split(".")[0] || "theunniyarcha";
+    const shopDomain = cleanDomain || `${handle}.myshopify.com`;
 
-    let shop = await prisma.shop.findUnique({
-      where: { shopDomain },
+    let shop = await prisma.shop.findFirst({
+      where: {
+        OR: [
+          { shopDomain: cleanDomain },
+          { shopDomain: `${handle}.myshopify.com` },
+          { shopDomain: { startsWith: handle } },
+        ],
+      },
     });
 
     if (!shop) {
       shop = await prisma.shop.create({
         data: {
-          shopDomain,
+          shopDomain: `${handle}.myshopify.com`,
           shopifyShopId: "gid://shopify/Shop/1234567890",
           installedAt: new Date(),
           privacySettings: {

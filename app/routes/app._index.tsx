@@ -117,8 +117,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
 
     try {
-      const shop = await prisma.shop.findUnique({
-        where: { shopDomain },
+      const handle = shopDomain.split(".")[0];
+      const shop = await prisma.shop.findFirst({
+        where: {
+          OR: [
+            { shopDomain },
+            { shopDomain: `${handle}.myshopify.com` },
+            { shopDomain: { startsWith: handle } },
+          ],
+        },
         include: {
           visitors: {
             include: {
