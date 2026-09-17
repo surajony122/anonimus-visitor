@@ -41,15 +41,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           { shopDomain: cleanDomain },
           { shopDomain: `${handle}.myshopify.com` },
           { shopDomain: { startsWith: handle } },
+          { shopDomain: { contains: handle } },
         ],
       },
     });
 
     if (!shop) {
+      shop = await prisma.shop.findFirst({
+        orderBy: { updatedAt: "desc" },
+      });
+    }
+
+    if (!shop) {
       shop = await prisma.shop.create({
         data: {
           shopDomain: `${handle}.myshopify.com`,
-          shopifyShopId: "gid://shopify/Shop/1234567890",
+          shopifyShopId: `gid://shopify/Shop/${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           installedAt: new Date(),
           privacySettings: {
             create: {

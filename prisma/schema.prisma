@@ -28,7 +28,7 @@ model Session {
 
 model Shop {
   id                    String    @id @default(uuid())
-  shopifyShopId         String?   @unique
+  shopifyShopId         String?
   shopDomain            String    @unique
   accessTokenReference  String?
   installedAt           DateTime  @default(now())
