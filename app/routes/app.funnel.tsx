@@ -295,34 +295,68 @@ export default function FunnelAnalyticsRoute() {
     });
   }, [events, timeFilter]);
 
-  // Aggregate Top-to-Bottom Funnel Metrics
+  // Filter Shopify Orders strictly by the selected Time Range
+  const filteredOrders = useMemo(() => {
+    const now = Date.now();
+    return shopifyOrders.filter((o: any) => {
+      if (!o.createdAt) return true;
+      const oTime = new Date(o.createdAt).getTime();
+      if (timeFilter === "today") {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return oTime >= todayStart.getTime();
+      }
+      if (timeFilter === "yesterday") {
+        const yesterdayStart = new Date();
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+        yesterdayStart.setHours(0, 0, 0, 0);
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return oTime >= yesterdayStart.getTime() && oTime < todayStart.getTime();
+      }
+      if (timeFilter === "7d") return now - oTime <= 7 * 24 * 3600 * 1000;
+      if (timeFilter === "30d") return now - oTime <= 30 * 24 * 3600 * 1000;
+      return true;
+    });
+  }, [shopifyOrders, timeFilter]);
+
+  // Aggregate Top-to-Bottom Funnel Metrics with Real Strict Funnel Logic
   const funnelMetrics = useMemo(() => {
-    const totalVisitors = new Set(filteredEvents.map((e: any) => e.visitorId)).size || (sessions.length > 0 ? sessions.length : 1420);
-    const productViewVisitors = new Set(
+    const rawLandings = new Set(filteredEvents.map((e: any) => e.visitorId)).size || (sessions.length > 0 ? sessions.length : 0);
+    const rawProductViews = new Set(
       filteredEvents.filter((e: any) => e.eventType === "product_viewed").map((e: any) => e.visitorId)
-    ).size || 980;
-    const cartAddVisitors = new Set(
+    ).size;
+    const rawCartAdds = new Set(
       filteredEvents.filter((e: any) => e.eventType === "product_added_to_cart").map((e: any) => e.visitorId)
-    ).size || 210;
-    const cartViewVisitors = new Set(
+    ).size;
+    const rawCartViews = new Set(
       filteredEvents.filter((e: any) => e.eventType === "cart_viewed").map((e: any) => e.visitorId)
-    ).size || 180;
-    const checkoutVisitors = new Set(
+    ).size;
+    const rawCheckouts = new Set(
       filteredEvents.filter((e: any) => e.eventType === "checkout_started" || e.eventType === "checkout_completed").map((e: any) => e.visitorId)
-    ).size || 94;
-    const orderVisitors = new Set(
+    ).size;
+    const rawEventOrders = new Set(
       filteredEvents.filter((e: any) => e.eventType === "checkout_completed").map((e: any) => e.visitorId)
-    ).size || (shopifyOrders.length > 0 ? shopifyOrders.length : 48);
+    ).size;
+
+    // Actual verified orders placed during this time range
+    const orders = Math.max(rawEventOrders, filteredOrders.length);
+    
+    // Funnel invariant: Every completed order must have started checkout, added to cart, and landed on the store
+    const checkouts = Math.max(rawCheckouts, orders);
+    const cartAdds = Math.max(rawCartAdds, rawCartViews, checkouts);
+    const productViews = Math.max(rawProductViews, cartAdds);
+    const landings = Math.max(rawLandings, productViews, 1);
 
     return {
-      landings: Math.max(totalVisitors, productViewVisitors, 1420),
-      productViews: productViewVisitors,
-      cartAdds: cartAddVisitors,
-      cartViews: cartViewVisitors,
-      checkouts: checkoutVisitors,
-      orders: orderVisitors,
+      landings,
+      productViews,
+      cartAdds,
+      cartViews: rawCartViews,
+      checkouts,
+      orders,
     };
-  }, [filteredEvents, sessions, shopifyOrders]);
+  }, [filteredEvents, filteredOrders, sessions]);
 
   // Product Trends & Leaks Aggregator
   const productAnalytics = useMemo(() => {
@@ -397,7 +431,7 @@ export default function FunnelAnalyticsRoute() {
       }
     });
 
-    shopifyOrders.forEach((o: any) => {
+    filteredOrders.forEach((o: any) => {
       o.lineItems?.edges?.forEach((li: any) => {
         const title = li.node?.title || "";
         const pKey = title.toLowerCase();
@@ -1261,7 +1295,7 @@ export default function FunnelAnalyticsRoute() {
                 {/* Drop Indicator 1 -> 2 */}
                 <div style={{ width: "94%", display: "flex", justifyContent: "center", alignItems: "center", gap: "10px", padding: "6px 0", position: "relative" }}>
                   <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                    ▼ {funnelMetrics.landings > 0 ? Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100) : 69}% continue
+                    ▼ {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)) : 69}% continue
                   </span>
                 </div>
 
@@ -1283,14 +1317,14 @@ export default function FunnelAnalyticsRoute() {
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
                     <span style={{ fontSize: "16px", fontWeight: 700 }}>{funnelMetrics.productViews.toLocaleString()}</span>
-                    <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100) : 69}%</span>
+                    <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)) : 69}%</span>
                   </div>
                 </div>
 
                 {/* Drop Indicator 2 -> 3 with Leak Badge */}
                 <div style={{ width: "88%", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", padding: "6px 0", position: "relative" }}>
                   <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                    ▼ {funnelMetrics.productViews > 0 ? Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100) : 21}% continue
+                    ▼ {funnelMetrics.productViews > 0 ? Math.min(100, Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100)) : 21}% continue
                   </span>
                   <span style={{
                     background: "#fef3c7",
@@ -1323,14 +1357,14 @@ export default function FunnelAnalyticsRoute() {
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
                     <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.cartAdds.toLocaleString()}</span>
-                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? ((funnelMetrics.cartAdds / funnelMetrics.landings) * 100).toFixed(1) : 14.8}%</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.cartAdds / funnelMetrics.landings) * 100)) : 15}%</span>
                   </div>
                 </div>
 
                 {/* Drop Indicator 3 -> 4 with Major Abandoned Leak Badge */}
                 <div style={{ width: "76%", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", padding: "6px 0", position: "relative", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                    ▼ {funnelMetrics.cartAdds > 0 ? Math.round((funnelMetrics.checkouts / funnelMetrics.cartAdds) * 100) : 45}% continue
+                    ▼ {funnelMetrics.cartAdds > 0 ? Math.min(100, Math.round((funnelMetrics.checkouts / funnelMetrics.cartAdds) * 100)) : 45}% continue
                   </span>
                   <span style={{
                     background: "#ffedd5",
@@ -1363,14 +1397,14 @@ export default function FunnelAnalyticsRoute() {
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
                     <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.checkouts.toLocaleString()}</span>
-                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? ((funnelMetrics.checkouts / funnelMetrics.landings) * 100).toFixed(1) : 6.6}%</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.checkouts / funnelMetrics.landings) * 100)) : 7}%</span>
                   </div>
                 </div>
 
                 {/* Drop Indicator 4 -> 5 */}
                 <div style={{ width: "64%", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", padding: "6px 0" }}>
                   <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                    ▼ {funnelMetrics.checkouts > 0 ? Math.round((funnelMetrics.orders / funnelMetrics.checkouts) * 100) : 51}% continue
+                    ▼ {funnelMetrics.checkouts > 0 ? Math.min(100, Math.round((funnelMetrics.orders / funnelMetrics.checkouts) * 100)) : 51}% continue
                   </span>
                 </div>
 
@@ -1388,11 +1422,11 @@ export default function FunnelAnalyticsRoute() {
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{ width: "20px", height: "20px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: 700 }}>5</span>
-                    <span style={{ fontWeight: 600, fontSize: "12px" }}>Orders Completed &amp; Paid</span>
+                    <span style={{ fontWeight: 600, fontSize: "12px" }}>Orders Completed & Paid</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
                     <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.orders.toLocaleString()}</span>
-                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.9)" }}>orders {funnelMetrics.landings > 0 ? ((funnelMetrics.orders / funnelMetrics.landings) * 100).toFixed(1) : 3.4}%</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.9)" }}>orders {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.orders / funnelMetrics.landings) * 100)) : 3}%</span>
                   </div>
                 </div>
 
@@ -1446,7 +1480,7 @@ export default function FunnelAnalyticsRoute() {
             {/* RIGHT COLUMN: AI Friction & Leak Diagnosis */}
             <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                AI FRICTION &amp; LEAK DIAGNOSIS
+                AI FRICTION & LEAK DIAGNOSIS
               </div>
 
               {/* Leak Card 1 */}
