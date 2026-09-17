@@ -128,13 +128,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // ALWAYS QUERY DATABASE FOR VISITOR AND EVENT DATA
   try {
-    const handle = shopDomain.split(".")[0];
-    const shop = await prisma.shop.findFirst({
+    const handle = (shopDomain || "").split(".")[0];
+    let shop = await prisma.shop.findFirst({
       where: {
         OR: [
           { shopDomain },
           { shopDomain: `${handle}.myshopify.com` },
           { shopDomain: { startsWith: handle } },
+          { shopDomain: { contains: handle } },
         ],
       },
       include: {
@@ -149,6 +150,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         },
       },
     });
+
+    if (!shop) {
+      shop = await prisma.shop.findFirst({
+        orderBy: { updatedAt: "desc" },
+        include: {
+          visitors: {
+            include: {
+              sessions: true,
+              events: { orderBy: { timestamp: "desc" }, take: 40 },
+              identities: true,
+              customerLinks: { include: { customer: true } },
+            },
+            orderBy: { lastSeenAt: "desc" },
+          },
+        },
+      });
+    }
 
     if (shop) {
       totalTrackedVisitors = shop.visitors.length;
@@ -173,11 +191,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
       if (latestEvent) {
         lastEventTimestamp = latestEvent.timestamp.toISOString();
-        const diffMinutes = (Date.now() - latestEvent.timestamp.getTime()) / (1000 * 60);
-        isPixelActive = diffMinutes < 1440;
-      } else if (shop.visitors.length > 0) {
         isPixelActive = true;
-        lastEventTimestamp = shop.visitors[0].lastSeenAt.toISOString();
+      } else if (shop.visitors.length > 0 || totalEventsLogged > 0) {
+        isPixelActive = true;
+        lastEventTimestamp = shop.visitors[0]?.lastSeenAt ? shop.visitors[0].lastSeenAt.toISOString() : new Date().toISOString();
       }
 
       visitorsData = shop.visitors.map((v) => {
