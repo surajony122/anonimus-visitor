@@ -427,13 +427,13 @@ export default function AppDashboard() {
   };
 
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || selectedVisitor !== null) return;
     const interval = setInterval(() => {
       revalidator.revalidate();
       setLastRefreshedAt(new Date().toLocaleTimeString());
     }, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh, revalidator]);
+  }, [autoRefresh, selectedVisitor, revalidator]);
 
   // Standalone Universal Tracker Snippet
   const universalTrackerSnippet = `<!-- Nitro Commerce Intelligent Storefront & Device Tracker -->
