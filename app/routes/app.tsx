@@ -30,6 +30,7 @@ export default function App() {
     <AppProvider isEmbeddedApp apiKey={apiKey} i18n={polarisTranslations}>
       <NavMenu>
         <Link to="/app" rel="home">Overview</Link>
+        <Link to="/app/funnel">Funnel &amp; Campaigns</Link>
         <Link to="/app/visitors">Storefront Visitors</Link>
         <Link to="/app/customers">Shopify Customers</Link>
         <Link to="/app/intent">Intent Intelligence</Link>
