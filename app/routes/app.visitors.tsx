@@ -239,21 +239,42 @@ export default function VisitorsList() {
   };
 
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || selectedVisitor !== null) return;
     const interval = setInterval(() => {
       revalidator.revalidate();
       setLastRefreshedAt(new Date().toLocaleTimeString());
     }, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh, revalidator]);
+  }, [autoRefresh, selectedVisitor, revalidator]);
+
+  const [timeFilter, setTimeFilter] = useState("all");
 
   let filtered = visitors;
-  if (statusFilter !== "all") {
-    filtered = filtered.filter((v: any) => v.status === statusFilter);
+  if (statusFilter === "identified") {
+    filtered = filtered.filter((v: any) => v.status === "identified" || Boolean(v.primaryEmail) || Boolean(v.primaryPhone) || Boolean(v.customer));
+  } else if (statusFilter === "anonymous") {
+    filtered = filtered.filter((v: any) => v.status === "anonymous" && !v.primaryEmail && !v.primaryPhone && !v.customer);
   }
+
   if (intentFilter !== "all") {
     filtered = filtered.filter((v: any) => v.intentTier === intentFilter);
   }
+
+  if (timeFilter !== "all") {
+    const now = Date.now();
+    filtered = filtered.filter((v: any) => {
+      const vTime = new Date(v.lastSeenAt).getTime();
+      if (timeFilter === "today") {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return vTime >= todayStart.getTime();
+      }
+      if (timeFilter === "24h") return now - vTime <= 24 * 3600 * 1000;
+      if (timeFilter === "7d") return now - vTime <= 7 * 24 * 3600 * 1000;
+      return true;
+    });
+  }
+
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(
@@ -326,6 +347,20 @@ export default function VisitorsList() {
               ]}
               value={intentFilter}
               onChange={(val) => setIntentFilter(val)}
+            />
+          </div>
+
+          <div style={{ width: "140px" }}>
+            <Select
+              label=""
+              options={[
+                { label: "All Time", value: "all" },
+                { label: "Today", value: "today" },
+                { label: "Last 24 Hours", value: "24h" },
+                { label: "Last 7 Days", value: "7d" },
+              ]}
+              value={timeFilter}
+              onChange={(val) => setTimeFilter(val)}
             />
           </div>
         </div>

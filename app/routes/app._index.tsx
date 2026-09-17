@@ -418,6 +418,7 @@ export default function AppDashboard() {
 
   const [copied, setCopied] = useState(false);
   const [visitorFilter, setVisitorFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -593,11 +594,26 @@ export default function AppDashboard() {
 
   let filteredVisitors = visitorsData;
   if (visitorFilter === "identified") {
-    filteredVisitors = filteredVisitors.filter((v: any) => v.status === "identified");
+    filteredVisitors = filteredVisitors.filter((v: any) => v.status === "identified" || Boolean(v.primaryEmail) || Boolean(v.primaryPhone) || Boolean(v.customer));
   } else if (visitorFilter === "high_intent") {
     filteredVisitors = filteredVisitors.filter((v: any) => v.intentScore >= 61);
   } else if (visitorFilter === "cart") {
     filteredVisitors = filteredVisitors.filter((v: any) => v.cartEventsCount > 0);
+  }
+
+  if (timeFilter !== "all") {
+    const now = Date.now();
+    filteredVisitors = filteredVisitors.filter((v: any) => {
+      const vTime = new Date(v.lastSeenAt).getTime();
+      if (timeFilter === "today") {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return vTime >= todayStart.getTime();
+      }
+      if (timeFilter === "24h") return now - vTime <= 24 * 3600 * 1000;
+      if (timeFilter === "7d") return now - vTime <= 7 * 24 * 3600 * 1000;
+      return true;
+    });
   }
 
   if (searchQuery) {
@@ -941,7 +957,22 @@ export default function AppDashboard() {
 
             <div style={{ flex: 1 }}></div>
 
-            <div style={{ width: "260px" }}>
+            <div style={{ width: "140px" }}>
+              <Select
+                label=""
+                labelHidden
+                options={[
+                  { label: "All Time", value: "all" },
+                  { label: "Today", value: "today" },
+                  { label: "Last 24 Hours", value: "24h" },
+                  { label: "Last 7 Days", value: "7d" },
+                ]}
+                value={timeFilter}
+                onChange={(val) => setTimeFilter(val)}
+              />
+            </div>
+
+            <div style={{ width: "240px" }}>
               <TextField
                 label=""
                 labelHidden
