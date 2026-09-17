@@ -98,25 +98,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const customer = v.customerLinks?.[0]?.customer || null;
 
     let rawDecryptedEmail = customer?.emailReference || null;
-    if (emailId?.encryptedValue) {
+    const encEmail = emailId?.identityValueEncrypted || emailId?.encryptedValue;
+    if (encEmail) {
       try {
-        rawDecryptedEmail = decryptValue(emailId.encryptedValue);
+        rawDecryptedEmail = decryptValue(encEmail);
       } catch {}
     }
 
     let rawDecryptedPhone = customer?.phoneReference || null;
-    if (phoneId?.encryptedValue) {
+    const encPhone = phoneId?.identityValueEncrypted || phoneId?.encryptedValue;
+    if (encPhone) {
       try {
-        rawDecryptedPhone = decryptValue(phoneId.encryptedValue);
+        rawDecryptedPhone = decryptValue(encPhone);
       } catch {}
     }
 
     const decryptedIdentities = (v.identities || []).map((i: any) => {
       let plainValue = "";
-      try {
-        plainValue = decryptValue(i.encryptedValue);
-      } catch {
-        plainValue = "[Protected Value]";
+      const encVal = i.identityValueEncrypted || i.encryptedValue;
+      if (encVal) {
+        try {
+          plainValue = decryptValue(encVal);
+        } catch {
+          plainValue = "[Protected Value]";
+        }
       }
       return {
         id: i.id,

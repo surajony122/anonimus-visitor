@@ -67,10 +67,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   // Decrypt contact identities (Email, Phone)
   const decryptedIdentities = (visitor.identities || []).map((i: any) => {
     let plainValue = "";
-    try {
-      plainValue = decryptValue(i.encryptedValue);
-    } catch {
-      plainValue = "[Protected Value]";
+    const encVal = i.identityValueEncrypted || i.encryptedValue;
+    if (encVal) {
+      try {
+        plainValue = decryptValue(encVal);
+      } catch {
+        plainValue = "[Protected Value]";
+      }
     }
     return {
       id: i.id,

@@ -216,16 +216,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const customer = v.customerLinks[0]?.customer || null;
 
         let rawDecryptedEmail = customer?.emailReference || null;
-        if (emailId?.encryptedValue) {
+        const encEmail = emailId?.identityValueEncrypted || (emailId as any)?.encryptedValue;
+        if (encEmail) {
           try {
-            rawDecryptedEmail = decryptValue(emailId.encryptedValue);
+            rawDecryptedEmail = decryptValue(encEmail);
           } catch {}
         }
 
         let rawDecryptedPhone = customer?.phoneReference || null;
-        if (phoneId?.encryptedValue) {
+        const encPhone = phoneId?.identityValueEncrypted || (phoneId as any)?.encryptedValue;
+        if (encPhone) {
           try {
-            rawDecryptedPhone = decryptValue(phoneId.encryptedValue);
+            rawDecryptedPhone = decryptValue(encPhone);
           } catch {}
         }
 

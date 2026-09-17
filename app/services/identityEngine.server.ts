@@ -47,7 +47,7 @@ export class IdentityEngine {
     const encryptedVal = encryptValue(normalizedValue);
     const confidence = params.confidenceScore ?? 100;
 
-    const visitor = await prisma.visitor.findUnique({
+    let visitor = await prisma.visitor.findUnique({
       where: {
         shopId_visitorId: {
           shopId,
@@ -60,7 +60,19 @@ export class IdentityEngine {
     });
 
     if (!visitor) {
-      throw new Error(`Visitor not found for shop ${shopId} and visitorId ${visitorId}`);
+      visitor = await prisma.visitor.create({
+        data: {
+          shopId,
+          visitorId,
+          status: "identified",
+          deviceCategory: "desktop",
+          firstSeenAt: new Date(),
+          lastSeenAt: new Date(),
+        },
+        include: {
+          identities: true,
+        },
+      });
     }
 
     const existingIdentity = await prisma.identity.findUnique({
