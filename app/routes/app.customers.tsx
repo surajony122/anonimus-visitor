@@ -38,7 +38,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         },
       },
       orderBy: { updatedAt: "desc" },
-      take: 200,
+      take: 1000,
     });
   } catch (dbErr) {
     console.warn("Customers DB query fallback:", dbErr);

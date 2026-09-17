@@ -62,7 +62,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           customerLinks: { include: { customer: true } },
         },
         orderBy: { lastSeenAt: "desc" },
-        take: 100,
+        take: 1000,
       }),
     ]);
 
