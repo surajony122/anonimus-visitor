@@ -27,25 +27,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   let customers: any[] = [];
   try {
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain },
-    });
-
-    if (shop) {
-      customers = await prisma.shopifyCustomer.findMany({
-        where: { shopId: shop.id },
-        include: {
-          visitorLinks: {
-            include: {
-              visitor: {
-                include: { events: true },
-              },
+    customers = await prisma.shopifyCustomer.findMany({
+      include: {
+        visitorLinks: {
+          include: {
+            visitor: {
+              include: { events: true },
             },
           },
         },
-        orderBy: { updatedAt: "desc" },
-      });
-    }
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+    });
   } catch (dbErr) {
     console.warn("Customers DB query fallback:", dbErr);
   }

@@ -33,22 +33,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   let visitors: any[] = [];
   try {
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain },
+    visitors = await prisma.visitor.findMany({
+      include: {
+        sessions: true,
+        events: { orderBy: { timestamp: "desc" } },
+        identities: true,
+        customerLinks: { include: { customer: true } },
+      },
+      orderBy: { lastSeenAt: "desc" },
+      take: 200,
     });
-
-    if (shop) {
-      visitors = await prisma.visitor.findMany({
-        where: { shopId: shop.id },
-        include: {
-          sessions: true,
-          events: { orderBy: { timestamp: "desc" } },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
-        orderBy: { lastSeenAt: "desc" },
-      });
-    }
   } catch (dbErr) {
     console.warn("Visitors DB query fallback:", dbErr);
   }

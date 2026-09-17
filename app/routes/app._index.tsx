@@ -168,19 +168,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       });
     }
 
-    let activeVisitors = shop?.visitors || [];
-    if (activeVisitors.length === 0) {
-      activeVisitors = await prisma.visitor.findMany({
-        include: {
-          sessions: true,
-          events: { orderBy: { timestamp: "desc" }, take: 40 },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
-        orderBy: { lastSeenAt: "desc" },
-        take: 50,
-      });
-    }
+    let activeVisitors = await prisma.visitor.findMany({
+      include: {
+        sessions: true,
+        events: { orderBy: { timestamp: "desc" }, take: 40 },
+        identities: true,
+        customerLinks: { include: { customer: true } },
+      },
+      orderBy: { lastSeenAt: "desc" },
+      take: 100,
+    });
 
     if (activeVisitors.length > 0) {
       totalTrackedVisitors = activeVisitors.length;
