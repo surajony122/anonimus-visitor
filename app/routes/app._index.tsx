@@ -128,46 +128,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // ALWAYS QUERY DATABASE FOR VISITOR AND EVENT DATA
   try {
-    const handle = (shopDomain || "").split(".")[0];
-    let shop = await prisma.shop.findFirst({
-      where: {
-        OR: [
-          { shopDomain },
-          { shopDomain: `${handle}.myshopify.com` },
-          { shopDomain: { startsWith: handle } },
-          { shopDomain: { contains: handle } },
-        ],
-      },
-      include: {
-        visitors: {
-          include: {
-            sessions: true,
-            events: { orderBy: { timestamp: "desc" }, take: 40 },
-            identities: true,
-            customerLinks: { include: { customer: true } },
-          },
-          orderBy: { lastSeenAt: "desc" },
-        },
-      },
-    });
-
-    if (!shop) {
-      shop = await prisma.shop.findFirst({
-        orderBy: { updatedAt: "desc" },
-        include: {
-          visitors: {
-            include: {
-              sessions: true,
-              events: { orderBy: { timestamp: "desc" }, take: 40 },
-              identities: true,
-              customerLinks: { include: { customer: true } },
-            },
-            orderBy: { lastSeenAt: "desc" },
-          },
-        },
-      });
-    }
-
     let activeVisitors = await prisma.visitor.findMany({
       include: {
         sessions: true,
