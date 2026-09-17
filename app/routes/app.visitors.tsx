@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, useRevalidator } from "@remix-run/react";
+import { useLoaderData, useNavigate, useRevalidator, Link } from "@remix-run/react";
 import React, { useState, useEffect } from "react";
 import {
   Page,
@@ -176,9 +176,17 @@ export default function VisitorsList() {
     return [
       <InlineStack gap="150" align="center" key={`id_${v.id}`}>
         <Icon name={isIdentified ? "ic-user-check" : "ic-user"} size={16} color={isIdentified ? "var(--ok)" : "var(--faint)"} />
-        <Button variant="plain" onClick={() => navigate(`/app/visitors/${v.visitorId}`)}>
+        <Link
+          to={`/app/visitors/${v.visitorId || v.id}`}
+          style={{
+            color: "#2563eb",
+            fontWeight: "600",
+            textDecoration: "underline",
+            cursor: "pointer",
+          }}
+        >
           {displayName}
-        </Button>
+        </Link>
         <span className="mono" style={{ fontSize: "11px", color: "var(--faint)" }}>
           {`(${v.visitorId.substring(0, 8)})`}
         </span>
@@ -194,9 +202,24 @@ export default function VisitorsList() {
       `${v.productsViewedCount} viewed`,
       v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart ($${v.cartValue})` : "—",
       new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      <Button size="slim" onClick={() => navigate(`/app/visitors/${v.visitorId}`)} key={`action_${v.id}`}>
+      <Link
+        key={`action_${v.id}`}
+        to={`/app/visitors/${v.visitorId || v.id}`}
+        style={{
+          display: "inline-block",
+          padding: "6px 12px",
+          background: "#2563eb",
+          color: "#ffffff",
+          borderRadius: "6px",
+          fontSize: "12px",
+          fontWeight: "600",
+          textDecoration: "none",
+          textAlign: "center",
+          cursor: "pointer",
+        }}
+      >
         View Journey &rarr;
-      </Button>,
+      </Link>,
     ];
   });
 

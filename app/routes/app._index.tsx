@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useActionData, useLoaderData, useNavigation, useSubmit, useNavigate, useRevalidator } from "@remix-run/react";
+import { useActionData, useLoaderData, useNavigation, useSubmit, useNavigate, useRevalidator, Link } from "@remix-run/react";
 import React, { useState, useEffect } from "react";
 import {
   Page,
@@ -1112,17 +1112,15 @@ export default function AppDashboard() {
                     </div>
 
                     {/* Action */}
-                    <div>
-                      <button
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <Link
+                        to={`/app/visitors/${v.visitorId || v.id}`}
                         className="nitro-btn-secondary"
-                        style={{ padding: "4px 8px", fontSize: "11px" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedVisitor(v);
-                        }}
+                        style={{ padding: "4px 8px", fontSize: "11px", textDecoration: "none", color: "inherit", display: "inline-block" }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        Inspect Lore →
-                      </button>
+                        View Journey →
+                      </Link>
                     </div>
                   </div>
                 );

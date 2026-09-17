@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, useRevalidator } from "@remix-run/react";
+import { useLoaderData, useNavigate, useRevalidator, Link } from "@remix-run/react";
 import React, { useState, useEffect } from "react";
 import {
   Page,
@@ -113,9 +113,23 @@ export default function CustomersRoute() {
         <Badge tone="warning">No Storefront Activity Linked</Badge>
       ),
       linkedVisitor ? (
-        <Button size="slim" onClick={() => navigate(`/app/visitors/${linkedVisitor.visitorId}`)}>
-          View Journey
-        </Button>
+        <Link
+          to={`/app/visitors/${linkedVisitor.visitorId || linkedVisitor.id}`}
+          style={{
+            display: "inline-block",
+            padding: "6px 12px",
+            background: "#2563eb",
+            color: "#ffffff",
+            borderRadius: "6px",
+            fontSize: "12px",
+            fontWeight: "600",
+            textDecoration: "none",
+            textAlign: "center",
+            cursor: "pointer",
+          }}
+        >
+          View Journey &rarr;
+        </Link>
       ) : (
         "—"
       ),
