@@ -33,6 +33,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const rawHeaderDomain = request.headers.get("x-shopify-shop-domain") || "";
     const cleanDomain = rawHeaderDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").toLowerCase().trim();
     const handle = cleanDomain.split(".")[0] || "theunniyarcha";
+    const shopDomain = cleanDomain || `${handle}.myshopify.com`;
 
     let shop = await prisma.shop.findFirst({
       where: {

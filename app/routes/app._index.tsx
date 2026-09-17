@@ -164,6 +164,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           lastEventTimestamp = latestEvent.timestamp.toISOString();
           const diffMinutes = (Date.now() - latestEvent.timestamp.getTime()) / (1000 * 60);
           isPixelActive = diffMinutes < 1440;
+        } else if (shop.visitors.length > 0) {
+          isPixelActive = true;
+          lastEventTimestamp = shop.visitors[0].lastSeenAt.toISOString();
         }
 
         visitorsData = shop.visitors.map((v) => {
