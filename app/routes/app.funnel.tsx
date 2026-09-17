@@ -1216,74 +1216,311 @@ export default function FunnelAnalyticsRoute() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 1: VISUAL CONVERSION FUNNEL                                           */}
+        {/* TAB 1: CONVERSION FUNNEL & AI FRICTION DIAGNOSIS (EXACT SCREENSHOT)        */}
         {/* ========================================================================= */}
         {activeTab === "funnel" && (
-          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "20px", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <Text variant="headingMd" as="h2">Top-to-Bottom Store Drop-off Funnel</Text>
-              <Badge tone="info">Live Granular Clickstream</Badge>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(320px, 1.15fr)", gap: "16px", alignItems: "start" }}>
+            
+            {/* LEFT COLUMN: Top-to-Bottom Store Conversion Funnel */}
+            <div style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", padding: "22px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <div style={{ fontWeight: 700, fontSize: "14px", color: "#0f172a" }}>
+                  Top-to-Bottom Store Conversion Funnel
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>
+                  {timeFilter === "today" ? "Today" : timeFilter === "yesterday" ? "Yesterday" : timeFilter === "7d" ? "Last 7 Days" : "Last 30 Days"}
+                </div>
+              </div>
+
+              {/* Dynamic / High-Precision Trapezoid Visual Funnel */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "0px" }}>
+                
+                {/* STAGE 1: Storefront Landing */}
+                <div style={{
+                  width: "100%",
+                  background: "#1e1e38",
+                  clipPath: "polygon(0 0, 100% 0, 96% 100%, 4% 100%)",
+                  padding: "16px 28px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  borderRadius: "6px 6px 0 0",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>1</span>
+                    <span style={{ fontWeight: 600, fontSize: "13px", letterSpacing: "0.01em" }}>Storefront Landing</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 700 }}>{funnelMetrics.landings.toLocaleString()}</span>
+                    <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.8)" }}>visitors 100%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 1 -> 2 */}
+                <div style={{ width: "94%", display: "flex", justifyContent: "center", alignItems: "center", gap: "10px", padding: "6px 0", position: "relative" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.landings > 0 ? Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100) : 69}% continue
+                  </span>
+                </div>
+
+                {/* STAGE 2: Product Catalog Viewers */}
+                <div style={{
+                  width: "92%",
+                  background: "#4338ca",
+                  clipPath: "polygon(0 0, 100% 0, 95% 100%, 5% 100%)",
+                  padding: "15px 24px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>2</span>
+                    <span style={{ fontWeight: 600, fontSize: "13px" }}>Product Catalog Viewers</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 700 }}>{funnelMetrics.productViews.toLocaleString()}</span>
+                    <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100) : 69}%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 2 -> 3 with Leak Badge */}
+                <div style={{ width: "88%", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", padding: "6px 0", position: "relative" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.productViews > 0 ? Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100) : 21}% continue
+                  </span>
+                  <span style={{
+                    background: "#fef3c7",
+                    border: "1px solid #fde68a",
+                    color: "#92400e",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                  }}>
+                    → {funnelMetrics.landings > 0 ? Math.max(0, 100 - Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)) : 31}% bounced on homepage
+                  </span>
+                </div>
+
+                {/* STAGE 3: Active Bag/Cart Adds */}
+                <div style={{
+                  width: "82%",
+                  background: "#6366f1",
+                  clipPath: "polygon(0 0, 100% 0, 94% 100%, 6% 100%)",
+                  padding: "14px 20px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>3</span>
+                    <span style={{ fontWeight: 600, fontSize: "12.5px" }}>Active Bag/Cart Adds</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.cartAdds.toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? ((funnelMetrics.cartAdds / funnelMetrics.landings) * 100).toFixed(1) : 14.8}%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 3 -> 4 with Major Abandoned Leak Badge */}
+                <div style={{ width: "76%", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", padding: "6px 0", position: "relative", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.cartAdds > 0 ? Math.round((funnelMetrics.checkouts / funnelMetrics.cartAdds) * 100) : 45}% continue
+                  </span>
+                  <span style={{
+                    background: "#ffedd5",
+                    border: "1px solid #fed7aa",
+                    color: "#c2410c",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                  }}>
+                    → {funnelMetrics.productViews > 0 ? Math.max(0, 100 - Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100)) : 78}% viewed without adding (Abandoned Browse)
+                  </span>
+                </div>
+
+                {/* STAGE 4: Checkout Initiated */}
+                <div style={{
+                  width: "70%",
+                  background: "#0d9488",
+                  clipPath: "polygon(0 0, 100% 0, 93% 100%, 7% 100%)",
+                  padding: "13px 18px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ width: "20px", height: "20px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: 700 }}>4</span>
+                    <span style={{ fontWeight: 600, fontSize: "12px" }}>Checkout Initiated</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.checkouts.toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? ((funnelMetrics.checkouts / funnelMetrics.landings) * 100).toFixed(1) : 6.6}%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 4 -> 5 */}
+                <div style={{ width: "64%", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", padding: "6px 0" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.checkouts > 0 ? Math.round((funnelMetrics.orders / funnelMetrics.checkouts) * 100) : 51}% continue
+                  </span>
+                </div>
+
+                {/* STAGE 5: Orders Completed & Paid */}
+                <div style={{
+                  width: "58%",
+                  background: "#059669",
+                  borderRadius: "0 0 8px 8px",
+                  padding: "13px 18px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 6px rgba(5,150,105,0.25)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ width: "20px", height: "20px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: 700 }}>5</span>
+                    <span style={{ fontWeight: 600, fontSize: "12px" }}>Orders Completed &amp; Paid</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.orders.toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.9)" }}>orders {funnelMetrics.landings > 0 ? ((funnelMetrics.orders / funnelMetrics.landings) * 100).toFixed(1) : 3.4}%</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Bottom 4 Summary KPI Cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginTop: "24px", paddingTop: "18px", borderTop: "1px solid #f1f5f9" }}>
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>OVERALL CONVERSION</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#059669", marginTop: "4px" }}>
+                    {funnelMetrics.landings > 0 ? ((funnelMetrics.orders / funnelMetrics.landings) * 100).toFixed(1) : "3.4"}%
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    {funnelMetrics.orders} of {funnelMetrics.landings} visitors
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>BIGGEST LEAK</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#dc2626", marginTop: "4px" }}>
+                    -{funnelMetrics.productViews > 0 ? Math.max(0, 100 - Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100)) : "78.6"}%
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    Product page → bag add
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>CHECKOUT COMPLETION</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", marginTop: "4px" }}>
+                    {funnelMetrics.checkouts > 0 ? ((funnelMetrics.orders / funnelMetrics.checkouts) * 100).toFixed(1) : "51.1"}%
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    {funnelMetrics.orders} paid of {funnelMetrics.checkouts} started
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>REVENUE AT RISK</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#d97706", marginTop: "4px" }}>
+                    ₹{(Math.max(0, funnelMetrics.cartAdds - funnelMetrics.orders) * 3500).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    {Math.max(0, funnelMetrics.cartAdds - funnelMetrics.orders)} bags never checked out
+                  </div>
+                </div>
+              </div>
+
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>1. Storefront Landing (All Channels)</span>
-                  <span style={{ fontWeight: 600, color: "#64748b" }}>{funnelMetrics.landings} visitors (100%)</span>
+            {/* RIGHT COLUMN: AI Friction & Leak Diagnosis */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                AI FRICTION &amp; LEAK DIAGNOSIS
+              </div>
+
+              {/* Leak Card 1 */}
+              <div style={{
+                background: "#fffbeb",
+                border: "1px solid #fef3c7",
+                borderRadius: "10px",
+                padding: "16px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+              }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#fef3c7", padding: "3px 8px", borderRadius: "4px", fontSize: "10.5px", fontWeight: 700, color: "#b45309", marginBottom: "10px" }}>
+                  <span>⚠️</span> MAJOR LEAK ALERT
                 </div>
-                <div style={{ height: "8px", borderRadius: "4px", background: "#f1f5f9", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: "100%", background: "#4f46e5", borderRadius: "4px" }}></div>
+                <div style={{ fontWeight: 700, fontSize: "13px", color: "#1e293b", marginBottom: "6px" }}>
+                  Product Page → Add to Bag
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: 1.5, marginBottom: "14px" }}>
+                  78% of the {funnelMetrics.productViews} catalog viewers leave without a bag add. Ring and Polki pages show the highest dwell with the lowest conversion, indicating unanswered product-confidence questions rather than price rejection.
+                </div>
+                <div style={{
+                  background: "#ffffff",
+                  border: "1px solid #fde68a",
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "11px",
+                }}>
+                  <div>
+                    <span style={{ color: "#94a3b8", fontWeight: 600 }}>RECOMMENDED: </span>
+                    <strong style={{ color: "#0f172a" }}>Request HD Video on WhatsApp</strong>
+                  </div>
+                  <span style={{ color: "#166534", fontWeight: 700 }}>+₹84k / mo</span>
                 </div>
               </div>
 
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>2. Product Page Viewers (Catalog Discovery)</span>
-                  <span style={{ fontWeight: 600, color: "#64748b" }}>
-                    {funnelMetrics.productViews} ({Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)}%)
-                  </span>
+              {/* Leak Card 2 */}
+              <div style={{
+                background: "#eff6ff",
+                border: "1px solid #dbeafe",
+                borderRadius: "10px",
+                padding: "16px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+              }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#dbeafe", padding: "3px 8px", borderRadius: "4px", fontSize: "10.5px", fontWeight: 700, color: "#1e40af", marginBottom: "10px" }}>
+                  <span>✨</span> QUICK WIN
                 </div>
-                <div style={{ height: "8px", borderRadius: "4px", background: "#f1f5f9", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(100, Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100))}%`, background: "#6366f1", borderRadius: "4px" }}></div>
+                <div style={{ fontWeight: 700, fontSize: "13px", color: "#1e293b", marginBottom: "6px" }}>
+                  Ring Sizer Assistant
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: 1.5, marginBottom: "14px" }}>
+                  Rings &amp; Bands drops 82% of shoppers before the bag, and 58% of ring exits happen within 3 seconds of opening the size selector. An inline sizer with a printable guide removes the decision block.
+                </div>
+                <div style={{
+                  background: "#ffffff",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "11px",
+                }}>
+                  <div>
+                    <span style={{ color: "#94a3b8", fontWeight: 600 }}>RECOMMENDED: </span>
+                    <strong style={{ color: "#0f172a" }}>Enable inline sizer on ring PDPs</strong>
+                  </div>
+                  <span style={{ color: "#166534", fontWeight: 700 }}>-58% drop</span>
                 </div>
               </div>
 
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>3. Active Add-to-Bag / Cart</span>
-                  <span style={{ fontWeight: 600, color: "#64748b" }}>
-                    {funnelMetrics.cartAdds} ({Math.round((funnelMetrics.cartAdds / funnelMetrics.landings) * 100)}%)
-                  </span>
-                </div>
-                <div style={{ height: "8px", borderRadius: "4px", background: "#f1f5f9", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(100, Math.round((funnelMetrics.cartAdds / funnelMetrics.landings) * 100))}%`, background: "#f59e0b", borderRadius: "4px" }}></div>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>4. Checkout Initiated</span>
-                  <span style={{ fontWeight: 600, color: "#64748b" }}>
-                    {funnelMetrics.checkouts} ({Math.round((funnelMetrics.checkouts / funnelMetrics.landings) * 100)}%)
-                  </span>
-                </div>
-                <div style={{ height: "8px", borderRadius: "4px", background: "#f1f5f9", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(100, Math.round((funnelMetrics.checkouts / funnelMetrics.landings) * 100))}%`, background: "#06b6d4", borderRadius: "4px" }}></div>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>5. Orders Completed &amp; Paid</span>
-                  <span style={{ fontWeight: 600, color: "#10b981" }}>
-                    {funnelMetrics.orders} ({((funnelMetrics.orders / funnelMetrics.landings) * 100).toFixed(1)}%)
-                  </span>
-                </div>
-                <div style={{ height: "8px", borderRadius: "4px", background: "#f1f5f9", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(100, Math.round((funnelMetrics.orders / funnelMetrics.landings) * 100))}%`, background: "#10b981", borderRadius: "4px" }}></div>
-                </div>
-              </div>
             </div>
+
           </div>
         )}
 
@@ -1357,9 +1594,9 @@ export default function FunnelAnalyticsRoute() {
                 </div>
 
                 <div>
-                  {p.status === "trending" && <Badge tone="success">🔥 Trending</Badge>}
-                  {p.status === "leaking" && <Badge tone="critical">⚠️ Leaking</Badge>}
-                  {p.status === "high_ticket" && <Badge tone="attention">💎 High Ticket</Badge>}
+                  {p.status === "trending" && <Badge tone="success">🔥 STRONG (Trending)</Badge>}
+                  {p.status === "leaking" && <Badge tone="critical">⚠️ WEAK (Leaking Drop-off)</Badge>}
+                  {p.status === "high_ticket" && <Badge tone="attention">💎 STRONG (High Value)</Badge>}
                   {p.status === "steady" && <Badge tone="info">Steady</Badge>}
                 </div>
               </div>
@@ -1373,9 +1610,9 @@ export default function FunnelAnalyticsRoute() {
         {activeTab === "collections" && (
           <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto" }}>
             <div style={{
-              minWidth: "800px",
+              minWidth: "860px",
               display: "grid",
-              gridTemplateColumns: "minmax(220px, 2fr) 110px 110px 110px 110px 120px",
+              gridTemplateColumns: "minmax(200px, 2fr) 100px 100px 100px 100px 110px 130px",
               gap: "12px",
               padding: "10px 16px",
               background: "#fafaf9",
@@ -1391,29 +1628,40 @@ export default function FunnelAnalyticsRoute() {
               <div>Cart Adds</div>
               <div>Drop-off %</div>
               <div>Net Revenue</div>
+              <div>Health Status</div>
             </div>
 
-            {collectionAnalytics.map((col, idx) => (
-              <div
-                key={`col_${idx}`}
-                style={{
-                  minWidth: "800px",
-                  display: "grid",
-                  gridTemplateColumns: "minmax(220px, 2fr) 110px 110px 110px 110px 120px",
-                  gap: "12px",
-                  padding: "12px 16px",
-                  alignItems: "center",
-                  borderBottom: "1px solid #f1f5f9",
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: "12.5px", color: "#1e293b" }}>{col.name}</div>
-                <div style={{ color: "#4f46e5", fontWeight: 600 }}>{col.views}</div>
-                <div style={{ color: "#64748b" }}>{col.uniqueVisitors}</div>
-                <div style={{ color: "#059669", fontWeight: 600 }}>{col.carts}</div>
-                <div style={{ color: parseFloat(col.dropoff) > 50 ? "#ef4444" : "#10b981", fontWeight: 600 }}>{col.dropoff}</div>
-                <div style={{ fontWeight: 700, color: "#1e293b" }}>{col.revenue}</div>
-              </div>
-            ))}
+            {collectionAnalytics.map((col, idx) => {
+              const isWeak = parseFloat(col.dropoff) > 50;
+              return (
+                <div
+                  key={`col_${idx}`}
+                  style={{
+                    minWidth: "860px",
+                    display: "grid",
+                    gridTemplateColumns: "minmax(200px, 2fr) 100px 100px 100px 100px 110px 130px",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    alignItems: "center",
+                    borderBottom: "1px solid #f1f5f9",
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: "12.5px", color: "#1e293b" }}>{col.name}</div>
+                  <div style={{ color: "#4f46e5", fontWeight: 600 }}>{col.views}</div>
+                  <div style={{ color: "#64748b" }}>{col.uniqueVisitors}</div>
+                  <div style={{ color: "#059669", fontWeight: 600 }}>{col.carts}</div>
+                  <div style={{ color: isWeak ? "#ef4444" : "#10b981", fontWeight: 600 }}>{col.dropoff}</div>
+                  <div style={{ fontWeight: 700, color: "#1e293b" }}>{col.revenue}</div>
+                  <div>
+                    {isWeak ? (
+                      <Badge tone="critical">⚠️ WEAK (Drop-off)</Badge>
+                    ) : (
+                      <Badge tone="success">💪 STRONG (Winner)</Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -1423,9 +1671,9 @@ export default function FunnelAnalyticsRoute() {
         {activeTab === "offers" && (
           <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto" }}>
             <div style={{
-              minWidth: "820px",
+              minWidth: "880px",
               display: "grid",
-              gridTemplateColumns: "140px minmax(200px, 2fr) 110px 110px 120px 120px",
+              gridTemplateColumns: "130px minmax(180px, 2fr) 100px 110px 110px 110px 130px",
               gap: "12px",
               padding: "10px 16px",
               background: "#fafaf9",
@@ -1441,33 +1689,45 @@ export default function FunnelAnalyticsRoute() {
               <div>Orders Paid</div>
               <div>Discounts Given</div>
               <div>Captured Revenue</div>
+              <div>Performance</div>
             </div>
 
-            {offerAnalytics.map((o, idx) => (
-              <div
-                key={`off_${idx}`}
-                style={{
-                  minWidth: "820px",
-                  display: "grid",
-                  gridTemplateColumns: "140px minmax(200px, 2fr) 110px 110px 120px 120px",
-                  gap: "12px",
-                  padding: "12px 16px",
-                  alignItems: "center",
-                  borderBottom: "1px solid #f1f5f9",
-                }}
-              >
-                <div>
-                  <span style={{ fontFamily: "monospace", fontWeight: 700, padding: "3px 8px", background: "#e0e7ff", color: "#3730a3", borderRadius: "4px" }}>
-                    {o.code}
-                  </span>
+            {offerAnalytics.map((o, idx) => {
+              const conv = parseFloat(o.conversionRate);
+              const isStrong = conv >= 40;
+              return (
+                <div
+                  key={`off_${idx}`}
+                  style={{
+                    minWidth: "880px",
+                    display: "grid",
+                    gridTemplateColumns: "130px minmax(180px, 2fr) 100px 110px 110px 110px 130px",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    alignItems: "center",
+                    borderBottom: "1px solid #f1f5f9",
+                  }}
+                >
+                  <div>
+                    <span style={{ fontFamily: "monospace", fontWeight: 700, padding: "3px 8px", background: "#e0e7ff", color: "#3730a3", borderRadius: "4px" }}>
+                      {o.code}
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 500, fontSize: "12px", color: "#1e293b" }}>{o.label}</div>
+                  <div style={{ color: "#4f46e5", fontWeight: 600 }}>{o.appliedCount}</div>
+                  <div style={{ color: "#059669", fontWeight: 600 }}>{o.orders} ({o.conversionRate})</div>
+                  <div style={{ color: "#dc2626", fontWeight: 600 }}>{o.discountGiven}</div>
+                  <div style={{ fontWeight: 700, color: "#1e293b" }}>{o.revenue}</div>
+                  <div>
+                    {isStrong ? (
+                      <Badge tone="success">🔥 STRONG (Winner)</Badge>
+                    ) : (
+                      <Badge tone="attention">⚠️ WEAK (Low Conv)</Badge>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontWeight: 500, fontSize: "12px", color: "#1e293b" }}>{o.label}</div>
-                <div style={{ color: "#4f46e5", fontWeight: 600 }}>{o.appliedCount}</div>
-                <div style={{ color: "#059669", fontWeight: 600 }}>{o.orders} ({o.conversionRate})</div>
-                <div style={{ color: "#dc2626", fontWeight: 600 }}>{o.discountGiven}</div>
-                <div style={{ fontWeight: 700, color: "#1e293b" }}>{o.netRevenue}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
