@@ -1,11 +1,9 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, useRevalidator, Link } from "@remix-run/react";
+import { useLoaderData, useNavigate, useRevalidator } from "@remix-run/react";
 import React, { useState, useEffect } from "react";
 import {
   Page,
-  LegacyCard,
-  DataTable,
   Badge,
   TextField,
   Select,
@@ -14,7 +12,10 @@ import {
   BlockStack,
   Text,
   ButtonGroup,
-  EmptyState,
+  Modal,
+  Divider,
+  ProgressBar,
+  Banner,
 } from "@shopify/polaris";
 import prisma from "../db.server";
 import { calculateIntentScore } from "../services/intentEngine.server";
@@ -23,10 +24,8 @@ import { authenticate } from "../shopify.server";
 import { Icon } from "../components/Icon";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  let shopDomain = "ravistore-shop.myshopify.com";
   try {
-    const { session } = await authenticate.admin(request);
-    shopDomain = session.shop;
+    await authenticate.admin(request);
   } catch (err) {
     if (err instanceof Response) throw err;
   }
@@ -35,38 +34,45 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
     visitors = await prisma.visitor.findMany({
       include: {
-        sessions: true,
-        events: { orderBy: { timestamp: "desc" } },
+        sessions: { orderBy: { startedAt: "desc" } },
+        events: { orderBy: { timestamp: "desc" }, take: 50 },
         identities: true,
         customerLinks: { include: { customer: true } },
       },
       orderBy: { lastSeenAt: "desc" },
-      take: 200,
+      take: 100,
     });
   } catch (dbErr) {
     console.warn("Visitors DB query fallback:", dbErr);
   }
 
   const enriched = visitors.map((v) => {
-    const pViews = v.events.filter((e) => e.eventType === "product_viewed").length;
+    let clientMeta: any = {};
+    try {
+      if (v.metadata) {
+        clientMeta = typeof v.metadata === "string" ? JSON.parse(v.metadata) : v.metadata;
+      }
+    } catch {}
+
+    const pViews = v.events.filter((e: any) => e.eventType === "product_viewed").length;
     const uniqueProductIds = new Set(
       v.events
-        .filter((e) => e.eventType === "product_viewed" && e.productId)
-        .map((e) => e.productId!)
+        .filter((e: any) => e.eventType === "product_viewed" && e.productId)
+        .map((e: any) => e.productId!)
     );
     const repeatViews = Math.max(0, pViews - uniqueProductIds.size);
-    const cViews = v.events.filter((e) => e.eventType === "collection_viewed").length;
-    const searches = v.events.filter((e) => e.eventType === "search_submitted").length;
-    const addToCart = v.events.filter((e) => e.eventType === "product_added_to_cart").length;
-    const cartViews = v.events.filter((e) => e.eventType === "cart_viewed").length;
-    const checkouts = v.events.filter((e) => e.eventType === "checkout_started").length;
-    const checkoutsCompleted = v.events.filter((e) => e.eventType === "checkout_completed").length;
+    const cViews = v.events.filter((e: any) => e.eventType === "collection_viewed").length;
+    const searches = v.events.filter((e: any) => e.eventType === "search_submitted").length;
+    const addToCart = v.events.filter((e: any) => e.eventType === "product_added_to_cart").length;
+    const cartViews = v.events.filter((e: any) => e.eventType === "cart_viewed").length;
+    const checkouts = v.events.filter((e: any) => e.eventType === "checkout_started").length;
+    const checkoutsCompleted = v.events.filter((e: any) => e.eventType === "checkout_completed").length;
 
     let cartVal = 0;
-    v.events.forEach((e) => {
+    v.events.forEach((e: any) => {
       if (e.metadata) {
         try {
-          const meta = JSON.parse(e.metadata);
+          const meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
           if (meta.cartValue || meta.price) {
             cartVal = Math.max(cartVal, Number(meta.cartValue || meta.price || 0));
           }
@@ -84,32 +90,116 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       cartValue: cartVal,
       checkoutStartedCount: checkouts,
       checkoutCompletedCount: checkoutsCompleted,
-      sessionsCount: v.sessions.length || 1,
+      sessionsCount: v.sessions?.length || 1,
     });
 
-    const emailId = v.identities.find((i) => i.identityType === "email");
-    const primaryEmail = emailId?.identityValueEncrypted ? decryptValue(emailId.identityValueEncrypted) : null;
-    const customer = v.customerLinks[0]?.customer || null;
+    const emailId = v.identities.find((i: any) => i.identityType === "email");
+    const phoneId = v.identities.find((i: any) => i.identityType === "phone");
+    const customer = v.customerLinks?.[0]?.customer || null;
+
+    let rawDecryptedEmail = customer?.emailReference || null;
+    if (emailId?.encryptedValue) {
+      try {
+        rawDecryptedEmail = decryptValue(emailId.encryptedValue);
+      } catch {}
+    }
+
+    let rawDecryptedPhone = customer?.phoneReference || null;
+    if (phoneId?.encryptedValue) {
+      try {
+        rawDecryptedPhone = decryptValue(phoneId.encryptedValue);
+      } catch {}
+    }
+
+    const decryptedIdentities = (v.identities || []).map((i: any) => {
+      let plainValue = "";
+      try {
+        plainValue = decryptValue(i.encryptedValue);
+      } catch {
+        plainValue = "[Protected Value]";
+      }
+      return {
+        id: i.id,
+        identityType: i.identityType,
+        value: plainValue,
+        source: i.source,
+        confidenceScore: i.confidenceScore,
+        createdAt: i.createdAt ? i.createdAt.toISOString() : new Date().toISOString(),
+      };
+    });
+
+    const parsedEvents = (v.events || []).map((e: any) => {
+      let meta: any = {};
+      try {
+        if (e.metadata) meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
+      } catch {}
+
+      let utmSource = "";
+      let utmMedium = "";
+      let utmCampaign = "";
+      let fbclid = "";
+      let gclid = "";
+
+      try {
+        const urlStr = e.pageUrl || meta.page_url || "";
+        if (urlStr.includes("?")) {
+          const params = new URL(urlStr).searchParams;
+          utmSource = params.get("utm_source") || "";
+          utmMedium = params.get("utm_medium") || "";
+          utmCampaign = params.get("utm_campaign") || "";
+          fbclid = params.get("fbclid") || "";
+          gclid = params.get("gclid") || "";
+        }
+      } catch {}
+
+      return {
+        id: e.id || e.eventId,
+        eventType: e.eventType,
+        timestamp: e.timestamp ? new Date(e.timestamp).toISOString() : new Date().toISOString(),
+        productId: e.productId,
+        pageUrl: e.pageUrl,
+        metadata: meta,
+        utm: {
+          utmSource,
+          utmMedium,
+          utmCampaign,
+          fbclid,
+          gclid,
+          isMetaAd: !!(fbclid || utmSource.toLowerCase().includes("meta") || utmSource.toLowerCase().includes("facebook") || utmSource.toLowerCase().includes("instagram")),
+        },
+      };
+    });
 
     return {
       id: v.id,
       visitorId: v.visitorId,
-      status: v.status,
-      firstSeenAt: v.firstSeenAt.toISOString(),
-      lastSeenAt: v.lastSeenAt.toISOString(),
-      deviceCategory: v.deviceCategory || "desktop",
-      sessionsCount: v.sessions.length,
+      status: decryptedIdentities.length > 0 ? "identified" : v.status,
+      firstSeenAt: v.firstSeenAt ? new Date(v.firstSeenAt).toISOString() : new Date().toISOString(),
+      lastSeenAt: v.lastSeenAt ? new Date(v.lastSeenAt).toISOString() : new Date().toISOString(),
+      deviceCategory: v.deviceCategory || clientMeta.deviceCategory || "desktop",
+      browser: clientMeta.browser || "Chrome",
+      os: clientMeta.os || "Desktop OS",
+      screenResolution: clientMeta.screenResolution || "1920x1080",
+      language: clientMeta.language || "en",
+      timezone: clientMeta.timezone || "UTC",
+      sessionsCount: v.sessions?.length || 1,
       productsViewedCount: pViews,
       cartEventsCount: addToCart,
       cartValue: cartVal,
       intentScore: intent.score,
       intentTier: intent.tier,
-      primaryEmail,
+      intentBreakdown: intent.breakdown,
+      primaryEmail: rawDecryptedEmail,
+      primaryPhone: rawDecryptedPhone,
+      identities: decryptedIdentities,
+      events: parsedEvents,
       customer: customer
         ? {
             id: customer.shopifyCustomerId,
             firstName: customer.firstName,
             lastName: customer.lastName,
+            email: customer.emailReference,
+            phone: customer.phoneReference,
           }
         : null,
     };
@@ -123,11 +213,20 @@ export default function VisitorsList() {
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
+
   const [statusFilter, setStatusFilter] = useState("all");
   const [intentFilter, setIntentFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("just now");
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(label);
+    setTimeout(() => setCopiedText(null), 2500);
+  };
 
   const handleManualRefresh = () => {
     revalidator.revalidate();
@@ -155,73 +254,13 @@ export default function VisitorsList() {
     filtered = filtered.filter(
       (v: any) =>
         v.visitorId.toLowerCase().includes(q) ||
-        (v.customer?.firstName && v.customer.firstName.toLowerCase().includes(q)) ||
-        (v.primaryEmail && v.primaryEmail.toLowerCase().includes(q))
+        (v.primaryEmail && v.primaryEmail.toLowerCase().includes(q)) ||
+        (v.primaryPhone && v.primaryPhone.includes(q)) ||
+        (v.browser && v.browser.toLowerCase().includes(q)) ||
+        (v.os && v.os.toLowerCase().includes(q)) ||
+        (v.customer?.firstName && v.customer.firstName.toLowerCase().includes(q))
     );
   }
-
-  const rows = filtered.map((v: any) => {
-    const isIdentified = v.status === "identified";
-    const displayName = v.customer?.firstName
-      ? `${v.customer.firstName} ${v.customer.lastName || ""}`
-      : isIdentified && v.primaryEmail
-      ? v.primaryEmail
-      : `Anonymous #${v.visitorId.substring(0, 8)}`;
-
-    let intentBadgeTone: "success" | "attention" | "info" | undefined = undefined;
-    if (v.intentTier === "very_high") intentBadgeTone = "success";
-    else if (v.intentTier === "high") intentBadgeTone = "attention";
-    else if (v.intentTier === "medium") intentBadgeTone = "info";
-
-    return [
-      <InlineStack gap="150" align="center" key={`id_${v.id}`}>
-        <Icon name={isIdentified ? "ic-user-check" : "ic-user"} size={16} color={isIdentified ? "var(--ok)" : "var(--faint)"} />
-        <Link
-          to={`/app/visitors/${v.visitorId || v.id}`}
-          style={{
-            color: "#2563eb",
-            fontWeight: "600",
-            textDecoration: "underline",
-            cursor: "pointer",
-          }}
-        >
-          {displayName}
-        </Link>
-        <span className="mono" style={{ fontSize: "11px", color: "var(--faint)" }}>
-          {`(${v.visitorId.substring(0, 8)})`}
-        </span>
-      </InlineStack>,
-      <span key={`status_${v.id}`} className={`ong-badge ${isIdentified ? "ong-badge-success" : ""}`}>
-        {v.status.toUpperCase()}
-      </span>,
-      <InlineStack gap="100" align="center" key={`intent_${v.id}`}>
-        <Badge tone={intentBadgeTone}>{`${v.intentScore}/100`}</Badge>
-        <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>{`(${v.intentTier})`}</span>
-      </InlineStack>,
-      `${v.sessionsCount} sessions`,
-      `${v.productsViewedCount} viewed`,
-      v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart ($${v.cartValue})` : "—",
-      new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      <Link
-        key={`action_${v.id}`}
-        to={`/app/visitors/${v.visitorId || v.id}`}
-        style={{
-          display: "inline-block",
-          padding: "6px 12px",
-          background: "#2563eb",
-          color: "#ffffff",
-          borderRadius: "6px",
-          fontSize: "12px",
-          fontWeight: "600",
-          textDecoration: "none",
-          textAlign: "center",
-          cursor: "pointer",
-        }}
-      >
-        View Journey &rarr;
-      </Link>,
-    ];
-  });
 
   return (
     <Page
@@ -232,10 +271,7 @@ export default function VisitorsList() {
           <span>Storefront Visitors</span>
         </InlineStack>
       }
-      primaryAction={{
-        content: "Simulate Traffic",
-        onAction: () => navigate("/app/simulator"),
-      }}
+      subtitle={`Displaying ${filtered.length} active shoppers tracked across the store`}
       secondaryActions={[
         {
           content: autoRefresh ? "🟢 Auto-Refresh (5s)" : "⏸️ Auto-Refresh: Off",
@@ -246,71 +282,440 @@ export default function VisitorsList() {
           loading: isRefreshing,
           onAction: handleManualRefresh,
         },
+        {
+          content: "Back to Overview",
+          onAction: () => navigate("/app"),
+        },
       ]}
     >
       <BlockStack gap="400">
-        <LegacyCard sectioned>
-          <InlineStack gap="300" align="space-between">
-            <InlineStack gap="200">
-              <ButtonGroup>
-                <Button pressed={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
-                  {`All (${visitors.length})`}
-                </Button>
-                <Button pressed={statusFilter === "anonymous"} onClick={() => setStatusFilter("anonymous")}>
-                  Anonymous Only
-                </Button>
-                <Button pressed={statusFilter === "identified"} onClick={() => setStatusFilter("identified")}>
-                  Identified Only
-                </Button>
-              </ButtonGroup>
-
-              <Select
-                label=""
-                labelHidden
-                options={[
-                  { label: "All Intent Levels", value: "all" },
-                  { label: "Very High Intent (81-100)", value: "very_high" },
-                  { label: "High Intent (61-80)", value: "high" },
-                  { label: "Medium Intent (31-60)", value: "medium" },
-                  { label: "Low Intent (0-30)", value: "low" },
-                ]}
-                value={intentFilter}
-                onChange={(val) => setIntentFilter(val)}
-              />
-            </InlineStack>
-
+        {/* Filters */}
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: "220px" }}>
             <TextField
               label=""
-              labelHidden
-              placeholder="Search visitor ID or name..."
+              placeholder="Search visitor ID, email, phone, OS, browser..."
               value={searchQuery}
               onChange={(val) => setSearchQuery(val)}
               autoComplete="off"
+              clearButton
+              onClearButtonClick={() => setSearchQuery("")}
             />
-          </InlineStack>
-        </LegacyCard>
+          </div>
 
-        <LegacyCard>
-          {filtered.length === 0 ? (
-            <EmptyState
-              heading="No visitors found"
-              action={{
-                content: "Open Live Simulator",
-                onAction: () => navigate("/app/simulator"),
-              }}
-              image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-            >
-              <p>Simulate storefront visitor traffic to see anonymous visitor tracking and identity resolution in action.</p>
-            </EmptyState>
-          ) : (
-            <DataTable
-              columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
-              headings={["Visitor", "Status", "Intent Score", "Sessions", "Products", "Cart Activity", "Last Seen", "Actions"]}
-              rows={rows as any}
+          <ButtonGroup variant="segmented">
+            <Button pressed={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</Button>
+            <Button pressed={statusFilter === "identified"} onClick={() => setStatusFilter("identified")}>Identified</Button>
+            <Button pressed={statusFilter === "anonymous"} onClick={() => setStatusFilter("anonymous")}>Anonymous</Button>
+          </ButtonGroup>
+
+          <div style={{ width: "160px" }}>
+            <Select
+              label=""
+              options={[
+                { label: "All Intent Tiers", value: "all" },
+                { label: "Very High Intent", value: "very_high" },
+                { label: "High Intent", value: "high" },
+                { label: "Medium Intent", value: "medium" },
+                { label: "Low Intent", value: "low" },
+              ]}
+              value={intentFilter}
+              onChange={(val) => setIntentFilter(val)}
             />
+          </div>
+        </div>
+
+        {/* Uniform Table matching Main Dashboard */}
+        <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
+            gap: "12px",
+            padding: "10px 16px",
+            background: "#faf9f6",
+            borderBottom: "1px solid #e2e8f0",
+            fontSize: "11px",
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "#64748b",
+            fontWeight: 600,
+          }}>
+            <div>Visitor / Lead</div>
+            <div>Device &amp; OS</div>
+            <div>Captured Contact</div>
+            <div>Intent Score</div>
+            <div>Browsing &amp; Cart</div>
+            <div>Last Seen</div>
+            <div style={{ textAlign: "right" }}>Action</div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div style={{ padding: "48px 16px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+              No visitor records match this filter.
+            </div>
+          ) : (
+            filtered.map((v: any) => {
+              const isIdentified = v.status === "identified" || v.primaryEmail || v.primaryPhone;
+              const displayName = v.customer?.firstName
+                ? `${v.customer.firstName} ${v.customer.lastName || ""}`
+                : isIdentified && v.primaryEmail
+                ? v.primaryEmail
+                : `Anonymous #${v.visitorId.substring(0, 8)}`;
+
+              return (
+                <div
+                  key={v.id}
+                  onClick={() => setSelectedVisitor(v)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
+                    gap: "12px",
+                    alignItems: "center",
+                    padding: "12px 16px",
+                    borderBottom: "1px solid #f1f5f9",
+                    cursor: "pointer",
+                    transition: "background 0.12s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  {/* Visitor / Lead */}
+                  <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: isIdentified ? "#0F8A5F" : v.intentScore >= 60 ? "#d97706" : "#94a3b8",
+                      flex: "none",
+                    }}></span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: "13px", color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {displayName}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.visitorId.substring(0, 16)}...
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Device & OS */}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: "12px", color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {v.browser} on {v.os}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "monospace" }}>
+                      {v.screenResolution}
+                    </div>
+                  </div>
+
+                  {/* Captured Contact */}
+                  <div style={{ minWidth: 0 }}>
+                    {v.primaryEmail ? (
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#0F8A5F", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.primaryEmail}
+                      </div>
+                    ) : (
+                      <span style={{ color: "#94a3b8", fontSize: "11.5px" }}>Anonymous</span>
+                    )}
+                    {v.primaryPhone && (
+                      <div style={{ fontSize: "11px", color: "#2563eb", fontFamily: "monospace" }}>
+                        {v.primaryPhone}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Intent Score */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{
+                      display: "inline-block",
+                      padding: "2px 7px",
+                      background: v.intentScore > 60 ? "#dcfce7" : "#e0e7ff",
+                      color: v.intentScore > 60 ? "#15803d" : "#3730a3",
+                      borderRadius: "4px",
+                      fontSize: "11.5px",
+                      fontWeight: 700,
+                      fontFamily: "monospace",
+                    }}>
+                      {`${v.intentScore}/100`}
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#64748b", textTransform: "capitalize" }}>
+                      {v.intentTier.replace("_", " ")}
+                    </span>
+                  </div>
+
+                  {/* Browsing & Cart */}
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 600, color: "#334155" }}>
+                      {v.productsViewedCount} viewed
+                    </div>
+                    <div style={{ fontSize: "11px", color: v.cartEventsCount > 0 ? "#d97706" : "#94a3b8" }}>
+                      {v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart ($${v.cartValue})` : "No cart items"}
+                    </div>
+                  </div>
+
+                  {/* Last Seen */}
+                  <div style={{ fontSize: "11.5px", color: "#64748b", fontFamily: "monospace" }}>
+                    {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+
+                  {/* Action Button: Opens Journey Popup */}
+                  <div style={{ textAlign: "right" }}>
+                    <button
+                      style={{
+                        padding: "5px 10px",
+                        background: "#2563eb",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: "6px",
+                        fontSize: "11.5px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedVisitor(v);
+                      }}
+                    >
+                      View Journey →
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
-        </LegacyCard>
+
+          <div style={{ padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#faf9f6", fontSize: "11.5px", color: "#64748b" }}>
+            <span>Showing {filtered.length} active visitor records</span>
+            <span style={{ fontFamily: "monospace" }}>Live Auto-Refresh 5s</span>
+          </div>
+        </div>
       </BlockStack>
+
+      {/* POPUP MODAL: Interactive Journey & Lore Details */}
+      {selectedVisitor && (
+        <Modal
+          open={Boolean(selectedVisitor)}
+          onClose={() => setSelectedVisitor(null)}
+          title={`Visitor Journey & Profile: ${selectedVisitor.visitorId}`}
+          primaryAction={{
+            content: "Close Details",
+            onAction: () => setSelectedVisitor(null),
+          }}
+          size="large"
+        >
+          <Modal.Section>
+            <BlockStack gap="400">
+              {/* Top Banner */}
+              {selectedVisitor.status === "identified" || selectedVisitor.primaryEmail || selectedVisitor.primaryPhone ? (
+                <Banner title="🟢 Contact Identity Unmasked & Verified" tone="success">
+                  <p>
+                    This shopper has been identified through campaign parameters, form autofill sniffing, or checkout sessions.
+                  </p>
+                </Banner>
+              ) : (
+                <Banner title="🔵 Anonymous Active Shopper" tone="info">
+                  <p>
+                    This visitor is currently browsing anonymously. When they type their email/phone or click a campaign ad, their identity unmasks instantly.
+                  </p>
+                </Banner>
+              )}
+
+              {/* Unmasked Contact Profile Card */}
+              {(selectedVisitor.primaryEmail || selectedVisitor.primaryPhone) && (
+                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "14px 16px" }}>
+                  <InlineStack align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <Text variant="headingSm" as="h3">Unmasked Contact Information</Text>
+                      <InlineStack gap="300">
+                        {selectedVisitor.primaryEmail && (
+                          <Badge tone="success">{`Email: ${selectedVisitor.primaryEmail}`}</Badge>
+                        )}
+                        {selectedVisitor.primaryPhone && (
+                          <Badge tone="info">{`Phone: ${selectedVisitor.primaryPhone}`}</Badge>
+                        )}
+                      </InlineStack>
+                    </BlockStack>
+                    <InlineStack gap="200">
+                      {selectedVisitor.primaryEmail && (
+                        <Button size="slim" onClick={() => copyToClipboard(selectedVisitor.primaryEmail, "Email")}>
+                          {copiedText === "Email" ? "✓ Copied" : "Copy Email"}
+                        </Button>
+                      )}
+                      {selectedVisitor.primaryPhone && (
+                        <Button size="slim" variant="primary" onClick={() => copyToClipboard(selectedVisitor.primaryPhone, "Phone")}>
+                          {copiedText === "Phone" ? "✓ Copied" : "Copy Phone"}
+                        </Button>
+                      )}
+                    </InlineStack>
+                  </InlineStack>
+                </div>
+              )}
+
+              {/* 2-Column Summary: Behavioral Intent + Device Profile */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                {/* Behavioral Intent */}
+                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px" }}>
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between">
+                      <Text variant="headingSm" as="h4">Intent Score</Text>
+                      <Badge tone={selectedVisitor.intentTier === "very_high" ? "success" : selectedVisitor.intentTier === "high" ? "attention" : undefined}>
+                        {`${selectedVisitor.intentScore}/100 • ${selectedVisitor.intentTier.toUpperCase()}`}
+                      </Badge>
+                    </InlineStack>
+                    <ProgressBar progress={selectedVisitor.intentScore} size="small" tone={selectedVisitor.intentScore > 60 ? "success" : "highlight"} />
+                    <Divider />
+                    <InlineStack align="space-between">
+                      <Text variant="bodySm" tone="subdued" as="span">Products Viewed</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="span">{selectedVisitor.productsViewedCount}</Text>
+                    </InlineStack>
+                    <InlineStack align="space-between">
+                      <Text variant="bodySm" tone="subdued" as="span">Cart Additions</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="span">{`${selectedVisitor.cartEventsCount} ($${selectedVisitor.cartValue})`}</Text>
+                    </InlineStack>
+                  </BlockStack>
+                </div>
+
+                {/* Device & Hardware */}
+                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px" }}>
+                  <BlockStack gap="150">
+                    <Text variant="headingSm" as="h4">Device Profile</Text>
+                    <InlineStack align="space-between">
+                      <Text variant="bodySm" tone="subdued" as="span">Device</Text>
+                      <Badge>{selectedVisitor.deviceCategory.toUpperCase()}</Badge>
+                    </InlineStack>
+                    <InlineStack align="space-between">
+                      <Text variant="bodySm" tone="subdued" as="span">Browser</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="span">{selectedVisitor.browser}</Text>
+                    </InlineStack>
+                    <InlineStack align="space-between">
+                      <Text variant="bodySm" tone="subdued" as="span">Operating System</Text>
+                      <Text variant="bodySm" fontWeight="bold" as="span">{selectedVisitor.os}</Text>
+                    </InlineStack>
+                    <InlineStack align="space-between">
+                      <Text variant="bodySm" tone="subdued" as="span">Resolution</Text>
+                      <Text variant="bodySm" as="span" style={{ fontFamily: "monospace" }}>{selectedVisitor.screenResolution}</Text>
+                    </InlineStack>
+                  </BlockStack>
+                </div>
+              </div>
+
+              {/* Chronological Event Timeline */}
+              <div style={{ marginTop: "10px" }}>
+                <Text variant="headingSm" as="h3">Chronological Clickstream Timeline</Text>
+                <div style={{ position: "relative", paddingLeft: "24px", borderLeft: "2px solid #e2e8f0", marginTop: "14px" }}>
+                  {(!selectedVisitor.events || selectedVisitor.events.length === 0) ? (
+                    <Text variant="bodyMd" tone="subdued" as="p">No clickstream events recorded yet.</Text>
+                  ) : (
+                    selectedVisitor.events.map((evt: any, idx: number) => {
+                      const dateStr = new Date(evt.timestamp).toLocaleString();
+                      const meta = evt.metadata || {};
+                      const utm = evt.utm || {};
+
+                      let badgeTone: "success" | "attention" | "info" | undefined = undefined;
+                      let badgeLabel = evt.eventType.replace(/_/g, " ").toUpperCase();
+
+                      if (evt.eventType === "checkout_completed") {
+                        badgeTone = "success";
+                        badgeLabel = "ORDER COMPLETED";
+                      } else if (evt.eventType === "checkout_started") {
+                        badgeTone = "attention";
+                        badgeLabel = "CHECKOUT STARTED";
+                      } else if (evt.eventType === "product_added_to_cart") {
+                        badgeTone = "attention";
+                        badgeLabel = "ADDED TO CART";
+                      } else if (evt.eventType === "product_viewed") {
+                        badgeTone = "info";
+                        badgeLabel = "PRODUCT VIEWED";
+                      } else if (evt.eventType === "page_viewed") {
+                        badgeLabel = "PAGE VIEW";
+                      }
+
+                      return (
+                        <div key={evt.id || idx} style={{ marginBottom: "22px", position: "relative" }}>
+                          {/* Timeline dot */}
+                          <div
+                            style={{
+                              position: "absolute",
+                              left: "-31px",
+                              top: "4px",
+                              width: "14px",
+                              height: "14px",
+                              borderRadius: "50%",
+                              backgroundColor:
+                                evt.eventType === "checkout_completed"
+                                  ? "#008060"
+                                  : evt.eventType === "product_added_to_cart" || evt.eventType === "checkout_started"
+                                  ? "#d97706"
+                                  : evt.eventType === "product_viewed"
+                                  ? "#2563eb"
+                                  : "#6b7280",
+                              border: "2px solid #ffffff",
+                              boxShadow: "0 0 0 1px #cbd5e1",
+                            }}
+                          />
+
+                          <BlockStack gap="100">
+                            <InlineStack gap="200" align="start" blockAlign="center">
+                              <Badge tone={badgeTone}>{badgeLabel}</Badge>
+                              <Text variant="bodySm" tone="subdued" as="span">{dateStr}</Text>
+                              {utm.isMetaAd && (
+                                <Badge tone="attention">🎯 META AD CAMPAIGN</Badge>
+                              )}
+                            </InlineStack>
+
+                            {/* Page URL / Click Target */}
+                            {evt.pageUrl && (
+                              <div style={{ background: "#f8fafc", padding: "6px 10px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                                <Text variant="bodySm" as="p">
+                                  <strong>URL: </strong>
+                                  <a href={evt.pageUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", wordBreak: "break-all" }}>
+                                    {evt.pageUrl}
+                                  </a>
+                                </Text>
+                              </div>
+                            )}
+
+                            {/* Product Details */}
+                            {(evt.productId || meta.title) && (
+                              <InlineStack gap="200" blockAlign="center">
+                                <Text variant="bodyMd" fontWeight="semibold" as="span">
+                                  🛍️ Product: {meta.title || evt.productId}
+                                </Text>
+                                {meta.price && (
+                                  <Badge tone="success">{`$${meta.price}`}</Badge>
+                                )}
+                              </InlineStack>
+                            )}
+
+                            {/* UTM Campaign Details */}
+                            {(utm.utmCampaign || utm.utmSource || utm.fbclid) && (
+                              <div style={{ background: "#fdf4ff", border: "1px solid #f0abfc", padding: "6px 10px", borderRadius: "6px" }}>
+                                <InlineStack gap="300" wrap>
+                                  {utm.utmSource && <Text variant="bodySm" as="span"><strong>Source:</strong> {utm.utmSource}</Text>}
+                                  {utm.utmMedium && <Text variant="bodySm" as="span"><strong>Medium:</strong> {utm.utmMedium}</Text>}
+                                  {utm.utmCampaign && <Text variant="bodySm" as="span"><strong>Campaign:</strong> {utm.utmCampaign}</Text>}
+                                  {utm.fbclid && <Text variant="bodySm" as="span"><strong>Meta Click ID:</strong> {utm.fbclid.substring(0, 16)}...</Text>}
+                                </InlineStack>
+                              </div>
+                            )}
+
+                            {/* Cart Value */}
+                            {meta.cartValue && (
+                              <Text variant="bodySm" fontWeight="bold" as="p">
+                                🛒 Cart Value: ${meta.cartValue}
+                              </Text>
+                            )}
+                          </BlockStack>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </BlockStack>
+          </Modal.Section>
+        </Modal>
+      )}
     </Page>
   );
 }

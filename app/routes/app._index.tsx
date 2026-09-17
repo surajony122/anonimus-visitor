@@ -1079,14 +1079,24 @@ export default function AppDashboard() {
 
                     {/* Action */}
                     <div style={{ display: "flex", gap: "6px" }}>
-                      <Link
-                        to={`/app/visitors/${v.visitorId || v.id}`}
-                        className="nitro-btn-secondary"
-                        style={{ padding: "4px 8px", fontSize: "11px", textDecoration: "none", color: "inherit", display: "inline-block" }}
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        style={{
+                          padding: "5px 10px",
+                          fontSize: "11.5px",
+                          fontWeight: 600,
+                          background: "#2563eb",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedVisitor(v);
+                        }}
                       >
                         View Journey →
-                      </Link>
+                      </button>
                     </div>
                   </div>
                 );
