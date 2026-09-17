@@ -168,12 +168,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       });
     }
 
-    if (shop) {
-      totalTrackedVisitors = shop.visitors.length;
-      anonymousVisitorsCount = shop.visitors.filter((v) => v.status === "anonymous").length;
-      identifiedVisitorsCount = shop.visitors.filter((v) => v.status === "identified").length;
+    let activeVisitors = shop?.visitors || [];
+    if (activeVisitors.length === 0) {
+      activeVisitors = await prisma.visitor.findMany({
+        include: {
+          sessions: true,
+          events: { orderBy: { timestamp: "desc" }, take: 40 },
+          identities: true,
+          customerLinks: { include: { customer: true } },
+        },
+        orderBy: { lastSeenAt: "desc" },
+        take: 50,
+      });
+    }
 
-      shop.visitors.forEach((v) => {
+    if (activeVisitors.length > 0) {
+      totalTrackedVisitors = activeVisitors.length;
+      anonymousVisitorsCount = activeVisitors.filter((v) => v.status === "anonymous").length;
+      identifiedVisitorsCount = activeVisitors.filter((v) => v.status === "identified").length;
+      isPixelActive = true;
+
+      activeVisitors.forEach((v) => {
         totalEventsLogged += v.events.length;
         const hasPView = v.events.some((e) => e.eventType === "product_viewed");
         const hasCart = v.events.some((e) => e.eventType === "product_added_to_cart");
@@ -185,19 +200,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       });
 
       const latestEvent = await prisma.event.findFirst({
-        where: { shopId: shop.id },
         orderBy: { timestamp: "desc" },
       });
 
       if (latestEvent) {
         lastEventTimestamp = latestEvent.timestamp.toISOString();
-        isPixelActive = true;
-      } else if (shop.visitors.length > 0 || totalEventsLogged > 0) {
-        isPixelActive = true;
-        lastEventTimestamp = shop.visitors[0]?.lastSeenAt ? shop.visitors[0].lastSeenAt.toISOString() : new Date().toISOString();
+      } else {
+        lastEventTimestamp = activeVisitors[0]?.lastSeenAt ? activeVisitors[0].lastSeenAt.toISOString() : new Date().toISOString();
       }
 
-      visitorsData = shop.visitors.map((v) => {
+      visitorsData = activeVisitors.map((v) => {
         let clientMeta: any = {};
         try {
           if (v.metadata) clientMeta = JSON.parse(v.metadata);
