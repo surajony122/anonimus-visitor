@@ -255,13 +255,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const phoneId = v.identities.find((i) => i.identityType === "phone");
         const customer = v.customerLinks[0]?.customer || null;
 
-        const rawDecryptedEmail = emailId?.identityValueEncrypted
-          ? decryptValue(emailId.identityValueEncrypted)
-          : customer?.emailReference || null;
+        let rawDecryptedEmail = customer?.emailReference || null;
+        if (emailId?.encryptedValue) {
+          try {
+            rawDecryptedEmail = decryptValue(emailId.encryptedValue);
+          } catch {}
+        }
 
-        const rawDecryptedPhone = phoneId?.identityValueEncrypted
-          ? decryptValue(phoneId.identityValueEncrypted)
-          : customer?.phoneReference || null;
+        let rawDecryptedPhone = customer?.phoneReference || null;
+        if (phoneId?.encryptedValue) {
+          try {
+            rawDecryptedPhone = decryptValue(phoneId.encryptedValue);
+          } catch {}
+        }
 
         return {
           id: v.id,
