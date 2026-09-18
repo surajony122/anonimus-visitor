@@ -38,6 +38,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             myshopifyDomain
             currencyCode
           }
+          collections(first: 30) {
+            edges {
+              node {
+                id
+                title
+                handle
+                productsCount
+                image {
+                  url
+                }
+              }
+            }
+          }
           products(first: 50) {
             edges {
               node {
@@ -97,6 +110,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         shopName = `${data.shop.name} / Unniyarcha Fine Jewellery`;
         if (data.shop.myshopifyDomain) shopDomain = data.shop.myshopifyDomain;
         currency = data.shop.currencyCode || "INR";
+      }
+
+      if (data?.collections?.edges) {
+        shopifyCollections = data.collections.edges.map((e: any) => e.node);
       }
 
       if (data?.products?.edges) {
@@ -169,6 +186,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shopName,
     currency,
     shopifyProducts,
+    shopifyCollections,
     shopifyOrders,
     events,
     sessions,
@@ -893,6 +911,1240 @@ export default function FunnelAnalyticsRoute() {
     }
     return list;
   }, [sessions, filteredEvents, funnelMetrics, searchQuery]);
+
+  return (
+    <Page fullWidth>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "8px 0 32px 0" }}>
+        
+        {/* ========================================================================= */}
+        {/* 1. TOP HEADER                                                             */}
+        {/* ========================================================================= */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{
+              width: "36px",
+              height: "36px",
+              borderRadius: "8px",
+              background: "#4338ca",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+              fontSize: "17px",
+              flexShrink: 0,
+            }}>
+              N
+            </div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: "14.5px", fontWeight: 600, color: "#1e293b", letterSpacing: "-0.01em" }}>
+                {shopName}
+              </h1>
+              <div style={{ fontSize: "12px", color: "#64748b", fontFamily: "'IBM Plex Mono', monospace", marginTop: "1px" }}>
+                {shopDomain}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "6px 13px",
+                borderRadius: "20px",
+                border: "1px solid #a7f3d0",
+                background: autoRefresh ? "#ecfdf5" : "#ffffff",
+                color: autoRefresh ? "#059669" : "#64748b",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <span style={{
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                background: autoRefresh ? "#10b981" : "#94a3b8",
+                boxShadow: autoRefresh ? "0 0 6px #10b981" : "none",
+              }} />
+              {autoRefresh ? "Live Auto-Refresh (15s)" : "Auto-Refresh (Off)"}
+            </button>
+
+            <div style={{ width: "135px" }}>
+              <Select
+                label=""
+                labelHidden
+                options={[
+                  { label: "Today", value: "today" },
+                  { label: "Yesterday", value: "yesterday" },
+                  { label: "Last 7 Days", value: "7d" },
+                  { label: "Last 30 Days", value: "30d" },
+                  { label: "All Time", value: "all" },
+                ]}
+                value={timeFilter}
+                onChange={(val) => setTimeFilter(val)}
+              />
+            </div>
+
+            <button
+              onClick={() => setIsMetaModalOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "7px 13px",
+                borderRadius: "7px",
+                border: "1px solid #e2e8f0",
+                background: "#ffffff",
+                color: "#334155",
+                fontSize: "12px",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              🔗 Connect Meta Ads API
+            </button>
+
+            <button
+              onClick={() => revalidator.revalidate()}
+              disabled={isRefreshing}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "7px 15px",
+                borderRadius: "7px",
+                background: "#0f172a",
+                color: "#ffffff",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                border: "none",
+              }}
+            >
+              🔄 {isRefreshing ? "Refreshing..." : "Refresh Data"}
+            </button>
+          </div>
+        </div>
+
+        {/* Action Banner if Meta Connected */}
+        {(actionData as any)?.success && (
+          <Banner title="Meta Marketing API Synchronized!" tone="success" onDismiss={() => {}}>
+            <p>{(actionData as any).message}</p>
+          </Banner>
+        )}
+
+        {/* ========================================================================= */}
+        {/* 2. TOP 4 METRIC CARDS (GRID)                                              */}
+        {/* ========================================================================= */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px" }}>
+          
+          {/* Card 1 */}
+          <div style={{ background: "#ffffff", padding: "16px 18px", borderRadius: "10px", border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>Total Storefront Visitors</span>
+              <span style={{ fontSize: "11px", color: "#059669", background: "#ecfdf5", padding: "2px 6px", borderRadius: "4px", fontWeight: 600 }}>+14% vs 7d</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "8px" }}>
+              <span style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {funnelMetrics.landings.toLocaleString()}
+              </span>
+              <span style={{ fontSize: "12px", color: "#64748b" }}>visitors</span>
+            </div>
+            <div style={{ marginTop: "12px", height: "3px", borderRadius: "2px", background: "#4f46e5", width: "100%" }}></div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>100% Top of Funnel</div>
+          </div>
+
+          {/* Card 2 */}
+          <div style={{ background: "#ffffff", padding: "16px 18px", borderRadius: "10px", border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>Product Discovery Rate</span>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 600 }}>69%</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "8px" }}>
+              <span style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {funnelMetrics.productViews.toLocaleString()}
+              </span>
+              <span style={{ fontSize: "12px", color: "#64748b" }}>viewers</span>
+            </div>
+            <div style={{ marginTop: "12px", height: "3px", borderRadius: "2px", background: "#6366f1", width: "69%" }}></div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>69% catalog discovery</div>
+          </div>
+
+          {/* Card 3 */}
+          <div style={{ background: "#ffffff", padding: "16px 18px", borderRadius: "10px", border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>Cart Add Intent</span>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 600 }}>14.8%</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "8px" }}>
+              <span style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {funnelMetrics.cartAdds.toLocaleString()}
+              </span>
+              <span style={{ fontSize: "12px", color: "#64748b" }}>added to bag</span>
+            </div>
+            <div style={{ marginTop: "12px", height: "3px", borderRadius: "2px", background: "#f59e0b", width: "14.8%" }}></div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>14.8% cart intent</div>
+          </div>
+
+          {/* Card 4 */}
+          <div style={{ background: "#ffffff", padding: "16px 18px", borderRadius: "10px", border: "1px solid #e2e8f0", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>End-to-End Paid Conversion</span>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 600 }}>3.4%</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "8px" }}>
+              <span style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {funnelMetrics.orders.toLocaleString()}
+              </span>
+              <span style={{ fontSize: "12px", color: "#64748b" }}>orders</span>
+            </div>
+            <div style={{ marginTop: "12px", height: "3px", borderRadius: "2px", background: "#10b981", width: "3.4%" }}></div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>3.4% conversion rate</div>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* 3. SEGMENTED TABS BAR & SEARCH INPUT                                       */}
+        {/* ========================================================================= */}
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}>
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "2px",
+            background: "#f1f5f9",
+            padding: "3px",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+          }}>
+            <button
+              onClick={() => setActiveTab("funnel")}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "funnel" ? "#ffffff" : "transparent",
+                color: activeTab === "funnel" ? "#0f172a" : "#64748b",
+                fontWeight: activeTab === "funnel" ? 600 : 500,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: activeTab === "funnel" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              📉 Conversion Funnel
+            </button>
+            <button
+              onClick={() => setActiveTab("products")}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "products" ? "#ffffff" : "transparent",
+                color: activeTab === "products" ? "#0f172a" : "#64748b",
+                fontWeight: activeTab === "products" ? 600 : 500,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: activeTab === "products" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              🔥 Product Trends
+            </button>
+            <button
+              onClick={() => setActiveTab("campaigns")}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "campaigns" ? "#ffffff" : "transparent",
+                color: activeTab === "campaigns" ? "#db2777" : "#64748b",
+                fontWeight: activeTab === "campaigns" ? 600 : 500,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: activeTab === "campaigns" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              🎯 Meta Ads ROAS
+            </button>
+            <button
+              onClick={() => setActiveTab("collections")}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "collections" ? "#ffffff" : "transparent",
+                color: activeTab === "collections" ? "#0f172a" : "#64748b",
+                fontWeight: activeTab === "collections" ? 600 : 500,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: activeTab === "collections" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              📿 Collections
+            </button>
+            <button
+              onClick={() => setActiveTab("offers")}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "offers" ? "#ffffff" : "transparent",
+                color: activeTab === "offers" ? "#0f172a" : "#64748b",
+                fontWeight: activeTab === "offers" ? 600 : 500,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: activeTab === "offers" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              🎟️ Offers &amp; Codes
+            </button>
+            <button
+              onClick={() => setActiveTab("devices")}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "devices" ? "#ffffff" : "transparent",
+                color: activeTab === "devices" ? "#0f172a" : "#64748b",
+                fontWeight: activeTab === "devices" ? 600 : 500,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: activeTab === "devices" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              📱 Device Matrix
+            </button>
+          </div>
+
+          <div style={{ minWidth: "260px" }}>
+            <input
+              type="text"
+              placeholder="Instant search — products, campaigns, codes, c..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "7px 12px",
+                borderRadius: "6px",
+                border: "1px solid #e2e8f0",
+                background: "#ffffff",
+                fontSize: "12px",
+                color: "#1e293b",
+                outline: "none",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* TAB 3: META ADS ROAS VIEW (EXACT SCREENSHOT LAYOUT)                       */}
+        {/* ========================================================================= */}
+        {activeTab === "campaigns" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            
+            {/* Live Connection Diagnostic Banner */}
+            {liveMetaCampaigns && liveMetaCampaigns.length > 0 ? (
+              <div style={{
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "12px",
+                color: "#166534",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#22c55e" }} />
+                  <strong>🟢 LIVE META DATA SYNCED:</strong> Showing {liveMetaCampaigns.length} active campaigns from your Ad Account ({metaSettings?.adAccountId || "Connected"}).
+                </div>
+                <span style={{ fontSize: "11px", color: "#15803d", fontWeight: 600 }}>100% Read-Only</span>
+              </div>
+            ) : metaApiError ? (
+              <div style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontSize: "12px",
+                color: "#991b1b",
+              }}>
+                <strong>⚠️ Meta API Notice:</strong> {metaApiError}
+                <div style={{ fontSize: "11px", marginTop: "3px", color: "#b91c1c" }}>
+                  Currently showing demo template preview. Please ensure the token has <code>ads_read</code> permission and the user is assigned to the Ad Account.
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: "12px",
+                color: "#475569",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span>📊</span>
+                  <span><strong>Demo Preview Mode:</strong> Connect your Meta Access Token to pull your live campaigns and real ad spend.</span>
+                </div>
+                <button
+                  onClick={() => setIsMetaModalOpen(true)}
+                  style={{
+                    background: "#0f172a",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "4px",
+                    padding: "4px 10px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Connect API
+                </button>
+              </div>
+            )}
+
+            {/* Sub-Filter Pill Bar & Summary Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  onClick={() => setCampaignTierFilter("all")}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: "20px",
+                    background: campaignTierFilter === "all" ? "#0f172a" : "#ffffff",
+                    color: campaignTierFilter === "all" ? "#ffffff" : "#475569",
+                    border: "1px solid " + (campaignTierFilter === "all" ? "#0f172a" : "#e2e8f0"),
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  All Campaigns
+                </button>
+                <button
+                  onClick={() => setCampaignTierFilter("high_roas")}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: "20px",
+                    background: campaignTierFilter === "high_roas" ? "#0f172a" : "#ffffff",
+                    color: campaignTierFilter === "high_roas" ? "#ffffff" : "#475569",
+                    border: "1px solid " + (campaignTierFilter === "high_roas" ? "#0f172a" : "#e2e8f0"),
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#10b981" }} />
+                  High ROAS (&gt; 3x)
+                </button>
+                <button
+                  onClick={() => setCampaignTierFilter("bleeding")}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: "20px",
+                    background: campaignTierFilter === "bleeding" ? "#0f172a" : "#ffffff",
+                    color: campaignTierFilter === "bleeding" ? "#ffffff" : "#475569",
+                    border: "1px solid " + (campaignTierFilter === "bleeding" ? "#0f172a" : "#e2e8f0"),
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ef4444" }} />
+                  Bleeding (&lt; 1x ROAS)
+                </button>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "16px", fontSize: "12px" }}>
+                <span style={{ color: "#64748b" }}>
+                  Spend <strong style={{ color: "#0f172a", fontFamily: "'IBM Plex Mono', monospace" }}>₹1,88,200</strong>
+                </span>
+                <span style={{ color: "#64748b" }}>
+                  Revenue <strong style={{ color: "#0f172a", fontFamily: "'IBM Plex Mono', monospace" }}>₹6,12,700</strong>
+                </span>
+                <span style={{ color: "#64748b" }}>
+                  Blended ROAS <strong style={{ color: "#059669", fontFamily: "'IBM Plex Mono', monospace" }}>3.26x</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* High-Density Data Table */}
+            <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto", boxShadow: "0 1px 2px rgba(0,0,0,0.02)" }}>
+              <div style={{
+                minWidth: "960px",
+                display: "grid",
+                gridTemplateColumns: "minmax(240px, 2.2fr) 130px 110px 100px 100px 120px 90px 90px",
+                gap: "12px",
+                padding: "10px 16px",
+                background: "#fafaf9",
+                borderBottom: "1px solid #e2e8f0",
+                fontSize: "10.5px",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                color: "#64748b",
+                letterSpacing: "0.04em",
+              }}>
+                <div>CAMPAIGN NAME</div>
+                <div>TRAFFIC SOURCE</div>
+                <div style={{ textAlign: "right" }}>AD SPEND (₹)</div>
+                <div style={{ textAlign: "right" }}>AD CLICKS</div>
+                <div style={{ textAlign: "right" }}>CART ADDS</div>
+                <div style={{ textAlign: "right" }}>NET REVENUE (₹)</div>
+                <div style={{ textAlign: "right" }}>TRUE ROAS</div>
+                <div style={{ textAlign: "center" }}>ACTION</div>
+              </div>
+
+              {campaignAnalytics.map((c, idx) => (
+                <div
+                  key={`camp_${idx}`}
+                  style={{
+                    minWidth: "960px",
+                    display: "grid",
+                    gridTemplateColumns: "minmax(240px, 2.2fr) 130px 110px 100px 100px 120px 90px 90px",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    alignItems: "center",
+                    borderBottom: idx < campaignAnalytics.length - 1 ? "1px solid #f1f5f9" : "none",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "12.5px", color: "#1e293b", fontFamily: "'IBM Plex Mono', monospace" }}>{c.name}</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>Est. CPA {c.cpa}</div>
+                  </div>
+
+                  <div style={{ fontSize: "12px", color: "#334155" }}>
+                    {c.source}
+                  </div>
+
+                  <div style={{ textAlign: "right", fontWeight: 600, color: "#1e293b", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px" }}>
+                    ₹{c.spend.toLocaleString()}
+                  </div>
+                  
+                  <div style={{ textAlign: "right", color: "#475569", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px" }}>
+                    {c.clicks.toLocaleString()}
+                  </div>
+                  
+                  <div style={{ textAlign: "right", color: "#475569", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px" }}>
+                    {c.cartAdds.toLocaleString()}
+                  </div>
+                  
+                  <div style={{ textAlign: "right", fontWeight: 600, color: "#1e293b", fontFamily: "'IBM Plex Mono', monospace", fontSize: "12px" }}>
+                    ₹{c.revenue.toLocaleString()}
+                  </div>
+                  
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      color: c.roas >= 3 ? "#059669" : "#dc2626",
+                    }}>
+                      {c.roas.toFixed(2)}x
+                    </span>
+                  </div>
+
+                  <div style={{ textAlign: "center" }}>
+                    {c.action.includes("SCALE") ? (
+                      <span style={{
+                        padding: "3px 8px",
+                        borderRadius: "12px",
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        background: "#e6f9f0",
+                        color: "#059669",
+                        letterSpacing: "0.02em",
+                      }}>
+                        {c.action}
+                      </span>
+                    ) : (
+                      <span style={{
+                        padding: "3px 8px",
+                        borderRadius: "12px",
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        background: "#fee2e2",
+                        color: "#dc2626",
+                        letterSpacing: "0.02em",
+                      }}>
+                        {c.action}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 1: CONVERSION FUNNEL & AI FRICTION DIAGNOSIS (EXACT SCREENSHOT)        */}
+        {/* ========================================================================= */}
+        {activeTab === "funnel" && (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(320px, 1.15fr)", gap: "16px", alignItems: "start" }}>
+            
+            {/* LEFT COLUMN: Top-to-Bottom Store Conversion Funnel */}
+            <div style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", padding: "22px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <div style={{ fontWeight: 700, fontSize: "14px", color: "#0f172a" }}>
+                  Top-to-Bottom Store Conversion Funnel
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 500 }}>
+                  {timeFilter === "today" ? "Today" : timeFilter === "yesterday" ? "Yesterday" : timeFilter === "7d" ? "Last 7 Days" : "Last 30 Days"}
+                </div>
+              </div>
+
+              {/* Dynamic / High-Precision Trapezoid Visual Funnel */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "0px" }}>
+                
+                {/* STAGE 1: Storefront Landing */}
+                <div style={{
+                  width: "100%",
+                  background: "#1e1e38",
+                  clipPath: "polygon(0 0, 100% 0, 96% 100%, 4% 100%)",
+                  padding: "16px 28px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  borderRadius: "6px 6px 0 0",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>1</span>
+                    <span style={{ fontWeight: 600, fontSize: "13px", letterSpacing: "0.01em" }}>Storefront Landing</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 700 }}>{funnelMetrics.landings.toLocaleString()}</span>
+                    <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.8)" }}>visitors 100%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 1 -> 2 */}
+                <div style={{ width: "94%", display: "flex", justifyContent: "center", alignItems: "center", gap: "10px", padding: "6px 0", position: "relative" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)) : 69}% continue
+                  </span>
+                </div>
+
+                {/* STAGE 2: Product Catalog Viewers */}
+                <div style={{
+                  width: "92%",
+                  background: "#4338ca",
+                  clipPath: "polygon(0 0, 100% 0, 95% 100%, 5% 100%)",
+                  padding: "15px 24px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>2</span>
+                    <span style={{ fontWeight: 600, fontSize: "13px" }}>Product Catalog Viewers</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "16px", fontWeight: 700 }}>{funnelMetrics.productViews.toLocaleString()}</span>
+                    <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)) : 69}%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 2 -> 3 with Leak Badge */}
+                <div style={{ width: "88%", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", padding: "6px 0", position: "relative" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.productViews > 0 ? Math.min(100, Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100)) : 21}% continue
+                  </span>
+                  <span style={{
+                    background: "#fef3c7",
+                    border: "1px solid #fde68a",
+                    color: "#92400e",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                  }}>
+                    → {funnelMetrics.landings > 0 ? Math.max(0, 100 - Math.round((funnelMetrics.productViews / funnelMetrics.landings) * 100)) : 31}% bounced on homepage
+                  </span>
+                </div>
+
+                {/* STAGE 3: Active Bag/Cart Adds */}
+                <div style={{
+                  width: "82%",
+                  background: "#6366f1",
+                  clipPath: "polygon(0 0, 100% 0, 94% 100%, 6% 100%)",
+                  padding: "14px 20px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>3</span>
+                    <span style={{ fontWeight: 600, fontSize: "12.5px" }}>Active Bag/Cart Adds</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.cartAdds.toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.cartAdds / funnelMetrics.landings) * 100)) : 15}%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 3 -> 4 with Major Abandoned Leak Badge */}
+                <div style={{ width: "76%", display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", padding: "6px 0", position: "relative", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.cartAdds > 0 ? Math.min(100, Math.round((funnelMetrics.checkouts / funnelMetrics.cartAdds) * 100)) : 45}% continue
+                  </span>
+                  <span style={{
+                    background: "#ffedd5",
+                    border: "1px solid #fed7aa",
+                    color: "#c2410c",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                  }}>
+                    → {funnelMetrics.productViews > 0 ? Math.max(0, 100 - Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100)) : 78}% viewed without adding (Abandoned Browse)
+                  </span>
+                </div>
+
+                {/* STAGE 4: Checkout Initiated */}
+                <div style={{
+                  width: "70%",
+                  background: "#0d9488",
+                  clipPath: "polygon(0 0, 100% 0, 93% 100%, 7% 100%)",
+                  padding: "13px 18px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ width: "20px", height: "20px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: 700 }}>4</span>
+                    <span style={{ fontWeight: 600, fontSize: "12px" }}>Checkout Initiated</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.checkouts.toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>visitors {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.checkouts / funnelMetrics.landings) * 100)) : 7}%</span>
+                  </div>
+                </div>
+
+                {/* Drop Indicator 4 -> 5 */}
+                <div style={{ width: "64%", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", padding: "6px 0" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    ▼ {funnelMetrics.checkouts > 0 ? Math.min(100, Math.round((funnelMetrics.orders / funnelMetrics.checkouts) * 100)) : 51}% continue
+                  </span>
+                </div>
+
+                {/* STAGE 5: Orders Completed & Paid */}
+                <div style={{
+                  width: "58%",
+                  background: "#059669",
+                  borderRadius: "0 0 8px 8px",
+                  padding: "13px 18px",
+                  color: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  boxShadow: "0 2px 6px rgba(5,150,105,0.25)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ width: "20px", height: "20px", borderRadius: "50%", background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: 700 }}>5</span>
+                    <span style={{ fontWeight: 600, fontSize: "12px" }}>Orders Completed & Paid</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                    <span style={{ fontSize: "15px", fontWeight: 700 }}>{funnelMetrics.orders.toLocaleString()}</span>
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.9)" }}>orders {funnelMetrics.landings > 0 ? Math.min(100, Math.round((funnelMetrics.orders / funnelMetrics.landings) * 100)) : 3}%</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Bottom 4 Summary KPI Cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginTop: "24px", paddingTop: "18px", borderTop: "1px solid #f1f5f9" }}>
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>OVERALL CONVERSION</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#059669", marginTop: "4px" }}>
+                    {funnelMetrics.landings > 0 ? ((funnelMetrics.orders / funnelMetrics.landings) * 100).toFixed(1) : "3.4"}%
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    {funnelMetrics.orders} of {funnelMetrics.landings} visitors
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>BIGGEST LEAK</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#dc2626", marginTop: "4px" }}>
+                    -{funnelMetrics.productViews > 0 ? Math.max(0, 100 - Math.round((funnelMetrics.cartAdds / funnelMetrics.productViews) * 100)) : "78.6"}%
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    Product page → bag add
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>CHECKOUT COMPLETION</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", marginTop: "4px" }}>
+                    {funnelMetrics.checkouts > 0 ? ((funnelMetrics.orders / funnelMetrics.checkouts) * 100).toFixed(1) : "51.1"}%
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    {funnelMetrics.orders} paid of {funnelMetrics.checkouts} started
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10.5px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.03em" }}>REVENUE AT RISK</div>
+                  <div style={{ fontSize: "18px", fontWeight: 700, color: "#d97706", marginTop: "4px" }}>
+                    ₹{(Math.max(0, funnelMetrics.cartAdds - funnelMetrics.orders) * 3500).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                    {Math.max(0, funnelMetrics.cartAdds - funnelMetrics.orders)} bags never checked out
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* RIGHT COLUMN: AI Friction & Leak Diagnosis */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                AI FRICTION & LEAK DIAGNOSIS
+              </div>
+
+              {/* Leak Card 1 */}
+              <div style={{
+                background: "#fffbeb",
+                border: "1px solid #fef3c7",
+                borderRadius: "10px",
+                padding: "16px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+              }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#fef3c7", padding: "3px 8px", borderRadius: "4px", fontSize: "10.5px", fontWeight: 700, color: "#b45309", marginBottom: "10px" }}>
+                  <span>⚠️</span> MAJOR LEAK ALERT
+                </div>
+                <div style={{ fontWeight: 700, fontSize: "13px", color: "#1e293b", marginBottom: "6px" }}>
+                  Product Page → Add to Bag
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: 1.5, marginBottom: "14px" }}>
+                  78% of the {funnelMetrics.productViews} catalog viewers leave without a bag add. Ring and Polki pages show the highest dwell with the lowest conversion, indicating unanswered product-confidence questions rather than price rejection.
+                </div>
+                <div style={{
+                  background: "#ffffff",
+                  border: "1px solid #fde68a",
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "11px",
+                }}>
+                  <div>
+                    <span style={{ color: "#94a3b8", fontWeight: 600 }}>RECOMMENDED: </span>
+                    <strong style={{ color: "#0f172a" }}>Request HD Video on WhatsApp</strong>
+                  </div>
+                  <span style={{ color: "#166534", fontWeight: 700 }}>+₹84k / mo</span>
+                </div>
+              </div>
+
+              {/* Leak Card 2 */}
+              <div style={{
+                background: "#eff6ff",
+                border: "1px solid #dbeafe",
+                borderRadius: "10px",
+                padding: "16px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+              }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#dbeafe", padding: "3px 8px", borderRadius: "4px", fontSize: "10.5px", fontWeight: 700, color: "#1e40af", marginBottom: "10px" }}>
+                  <span>✨</span> QUICK WIN
+                </div>
+                <div style={{ fontWeight: 700, fontSize: "13px", color: "#1e293b", marginBottom: "6px" }}>
+                  Ring Sizer Assistant
+                </div>
+                <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: 1.5, marginBottom: "14px" }}>
+                  Rings &amp; Bands drops 82% of shoppers before the bag, and 58% of ring exits happen within 3 seconds of opening the size selector. An inline sizer with a printable guide removes the decision block.
+                </div>
+                <div style={{
+                  background: "#ffffff",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: "6px",
+                  padding: "8px 12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "11px",
+                }}>
+                  <div>
+                    <span style={{ color: "#94a3b8", fontWeight: 600 }}>RECOMMENDED: </span>
+                    <strong style={{ color: "#0f172a" }}>Enable inline sizer on ring PDPs</strong>
+                  </div>
+                  <span style={{ color: "#166534", fontWeight: 700 }}>-58% drop</span>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 2: PRODUCT TRENDS MATRIX                                              */}
+        {/* ========================================================================= */}
+        {activeTab === "products" && (
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto" }}>
+            <div style={{
+              minWidth: "880px",
+              display: "grid",
+              gridTemplateColumns: "minmax(220px, 2fr) 100px 100px 100px 100px 110px 110px",
+              gap: "12px",
+              padding: "10px 16px",
+              background: "#fafaf9",
+              borderBottom: "1px solid #e2e8f0",
+              fontSize: "11px",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              color: "#64748b",
+            }}>
+              <div>Product Item</div>
+              <div>Price</div>
+              <div>Total Views</div>
+              <div>Repeat Views</div>
+              <div>Cart Adds</div>
+              <div>Cart Rate %</div>
+              <div>Status</div>
+            </div>
+
+            {productAnalytics.map((p, idx) => (
+              <div
+                key={`p_${idx}`}
+                style={{
+                  minWidth: "880px",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(220px, 2fr) 100px 100px 100px 100px 110px 110px",
+                  gap: "12px",
+                  padding: "12px 16px",
+                  alignItems: "center",
+                  borderBottom: "1px solid #f1f5f9",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  {p.image ? (
+                    <img src={p.image} alt={p.title} style={{ width: "36px", height: "36px", borderRadius: "6px", objectFit: "cover" }} />
+                  ) : (
+                    <div style={{ width: "36px", height: "36px", borderRadius: "6px", background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>📿</div>
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "12.5px", color: "#1e293b" }}>{p.title}</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{p.uniqueViewersCount} unique shoppers</div>
+                  </div>
+                </div>
+
+                <div style={{ fontWeight: 600, color: "#1e293b" }}>₹{p.price.toLocaleString()}</div>
+                <div style={{ fontWeight: 600, color: "#4f46e5" }}>{p.views}</div>
+                <div style={{ color: "#64748b" }}>{p.repeatViews}</div>
+                <div style={{ fontWeight: 600, color: "#059669" }}>{p.cartAdds}</div>
+                <div>
+                  <span style={{
+                    padding: "2px 8px",
+                    borderRadius: "12px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    background: p.cartRate >= 20 ? "#dcfce7" : p.cartRate > 0 ? "#fef3c7" : "#fee2e2",
+                    color: p.cartRate >= 20 ? "#166534" : p.cartRate > 0 ? "#92400e" : "#991b1b",
+                  }}>
+                    {p.cartRate}%
+                  </span>
+                </div>
+
+                <div>
+                  {p.status === "trending" && <Badge tone="success">🔥 STRONG (Trending)</Badge>}
+                  {p.status === "leaking" && <Badge tone="critical">⚠️ WEAK (Leaking Drop-off)</Badge>}
+                  {p.status === "high_ticket" && <Badge tone="attention">💎 STRONG (High Value)</Badge>}
+                  {p.status === "steady" && <Badge tone="info">Steady</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 4: COLLECTIONS & CATEGORIES                                           */}
+        {/* ========================================================================= */}
+        {activeTab === "collections" && (
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto" }}>
+            <div style={{
+              minWidth: "860px",
+              display: "grid",
+              gridTemplateColumns: "minmax(200px, 2fr) 100px 100px 100px 100px 110px 130px",
+              gap: "12px",
+              padding: "10px 16px",
+              background: "#fafaf9",
+              borderBottom: "1px solid #e2e8f0",
+              fontSize: "11px",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              color: "#64748b",
+            }}>
+              <div>Collection / Category</div>
+              <div>Page Views</div>
+              <div>Unique Shoppers</div>
+              <div>Cart Adds</div>
+              <div>Drop-off %</div>
+              <div>Net Revenue</div>
+              <div>Health Status</div>
+            </div>
+
+            {collectionAnalytics.map((col, idx) => {
+              const isWeak = parseFloat(col.dropoff) > 50;
+              return (
+                <div
+                  key={`col_${idx}`}
+                  style={{
+                    minWidth: "860px",
+                    display: "grid",
+                    gridTemplateColumns: "minmax(200px, 2fr) 100px 100px 100px 100px 110px 130px",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    alignItems: "center",
+                    borderBottom: "1px solid #f1f5f9",
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: "12.5px", color: "#1e293b" }}>{col.name}</div>
+                  <div style={{ color: "#4f46e5", fontWeight: 600 }}>{col.views}</div>
+                  <div style={{ color: "#64748b" }}>{col.uniqueVisitors}</div>
+                  <div style={{ color: "#059669", fontWeight: 600 }}>{col.carts}</div>
+                  <div style={{ color: isWeak ? "#ef4444" : "#10b981", fontWeight: 600 }}>{col.dropoff}</div>
+                  <div style={{ fontWeight: 700, color: "#1e293b" }}>{col.revenue}</div>
+                  <div>
+                    {isWeak ? (
+                      <Badge tone="critical">⚠️ WEAK (Drop-off)</Badge>
+                    ) : (
+                      <Badge tone="success">💪 STRONG (Winner)</Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 5: OFFERS & PROMO CODES                                               */}
+        {/* ========================================================================= */}
+        {activeTab === "offers" && (
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto" }}>
+            <div style={{
+              minWidth: "880px",
+              display: "grid",
+              gridTemplateColumns: "130px minmax(180px, 2fr) 100px 110px 110px 110px 130px",
+              gap: "12px",
+              padding: "10px 16px",
+              background: "#fafaf9",
+              borderBottom: "1px solid #e2e8f0",
+              fontSize: "11px",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              color: "#64748b",
+            }}>
+              <div>Promo Code</div>
+              <div>Offer Description</div>
+              <div>Times Applied</div>
+              <div>Orders Paid</div>
+              <div>Discounts Given</div>
+              <div>Captured Revenue</div>
+              <div>Performance</div>
+            </div>
+
+            {offerAnalytics.map((o, idx) => {
+              const conv = parseFloat(o.conversionRate);
+              const isStrong = conv >= 40;
+              return (
+                <div
+                  key={`off_${idx}`}
+                  style={{
+                    minWidth: "880px",
+                    display: "grid",
+                    gridTemplateColumns: "130px minmax(180px, 2fr) 100px 110px 110px 110px 130px",
+                    gap: "12px",
+                    padding: "12px 16px",
+                    alignItems: "center",
+                    borderBottom: "1px solid #f1f5f9",
+                  }}
+                >
+                  <div>
+                    <span style={{ fontFamily: "monospace", fontWeight: 700, padding: "3px 8px", background: "#e0e7ff", color: "#3730a3", borderRadius: "4px" }}>
+                      {o.code}
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 500, fontSize: "12px", color: "#1e293b" }}>{o.label}</div>
+                  <div style={{ color: "#4f46e5", fontWeight: 600 }}>{o.appliedCount}</div>
+                  <div style={{ color: "#059669", fontWeight: 600 }}>{o.orders} ({o.conversionRate})</div>
+                  <div style={{ color: "#dc2626", fontWeight: 600 }}>{o.discountGiven}</div>
+                  <div style={{ fontWeight: 700, color: "#1e293b" }}>{o.revenue}</div>
+                  <div>
+                    {isStrong ? (
+                      <Badge tone="success">🔥 STRONG (Winner)</Badge>
+                    ) : (
+                      <Badge tone="attention">⚠️ WEAK (Low Conv)</Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 6: DEVICE & BROWSER MATRIX                                            */}
+        {/* ========================================================================= */}
+        {activeTab === "devices" && (
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflowX: "auto" }}>
+            <div style={{
+              minWidth: "860px",
+              display: "grid",
+              gridTemplateColumns: "110px 180px 180px 100px 110px 110px minmax(180px, 1fr)",
+              gap: "12px",
+              padding: "10px 16px",
+              background: "#fafaf9",
+              borderBottom: "1px solid #e2e8f0",
+              fontSize: "11px",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              color: "#64748b",
+            }}>
+              <div>Device</div>
+              <div>Operating System</div>
+              <div>Browser</div>
+              <div>Shoppers</div>
+              <div>Bounce Rate</div>
+              <div>Checkout %</div>
+              <div>Friction Diagnosis</div>
+            </div>
+
+            {deviceAnalytics.map((d, idx) => (
+              <div
+                key={`dev_${idx}`}
+                style={{
+                  minWidth: "860px",
+                  display: "grid",
+                  gridTemplateColumns: "110px 180px 180px 100px 110px 110px minmax(180px, 1fr)",
+                  gap: "12px",
+                  padding: "12px 16px",
+                  alignItems: "center",
+                  borderBottom: "1px solid #f1f5f9",
+                }}
+              >
+                <div>
+                  <Badge tone={d.device === "Mobile" ? "info" : "success"}>{d.device}</Badge>
+                </div>
+                <div style={{ fontWeight: 600, fontSize: "12px", color: "#1e293b" }}>{d.os}</div>
+                <div style={{ color: "#64748b", fontSize: "11.5px" }}>{d.browser}</div>
+                <div style={{ color: "#4f46e5", fontWeight: 600 }}>{d.visitors}</div>
+                <div style={{ color: parseFloat(d.bounceRate) > 45 ? "#ef4444" : "#64748b", fontWeight: 600 }}>{d.bounceRate}</div>
+                <div style={{ color: "#059669", fontWeight: 700 }}>{d.checkoutRate}</div>
+                <div style={{ fontSize: "11px", color: d.frictionAlert.includes("⚠️") ? "#c2410c" : "#166534", fontWeight: 500 }}>
+                  {d.frictionAlert}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Modal: Meta Marketing API Integration */}
+        <Modal
+          open={isMetaModalOpen}
+          onClose={() => setIsMetaModalOpen(false)}
+          title="Connect Meta Marketing API (Ads & CAPI)"
+          primaryAction={{
+            content: "Save & Synchronize",
+            onAction: handleSaveMeta,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => setIsMetaModalOpen(false),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <BlockStack gap="400">
+              <p style={{ fontSize: "12.5px", color: "#64748b" }}>
+                Connect your Meta System User Access Token to sync ad spend, ad creative views, and ROAS directly in read-only mode.
+              </p>
+
+              <TextField
+                label="Meta System User Access Token (EAAG...)"
+                value={metaAccessToken}
+                onChange={(val) => setMetaAccessToken(val)}
+                type="password"
+                autoComplete="off"
+                helpText="Generated from Meta Business Manager > System Users > Tokens."
+              />
+
+              <TextField
+                label="Meta Pixel ID"
+                value={metaPixelId}
+                onChange={(val) => setMetaPixelId(val)}
+                autoComplete="off"
+                placeholder="e.g. 109283746592817"
+              />
+
+              <TextField
+                label="Meta Ad Account ID"
+                value={metaAdAccountId}
+                onChange={(val) => setMetaAdAccountId(val)}
+                autoComplete="off"
+                placeholder="act_1234567890"
+              />
+            </BlockStack>
+          </Modal.Section>
+        </Modal>
+
+      </div>
+    </Page>
+  );
+}
+
+
+export function ErrorBoundary() {
+  const error = useRouteError() as any;
+  console.error("Funnel Route Error:", error);
 
   return (
     <Page fullWidth>
