@@ -133,3 +133,39 @@ body {
   border-color: var(--warn-line);
   color: var(--warn);
 }
+
+/* Smooth top-to-bottom page reveal & instant preloader */
+@keyframes nitroTopToBottom {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nitroPulseBar {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+
+.nitro-page-container {
+  animation: nitroTopToBottom 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  width: 100%;
+}
+
+.nitro-preloader-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%);
+  background-size: 200% 100%;
+  animation: nitroPulseBar 1s infinite ease-in-out;
+  z-index: 9999999;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}

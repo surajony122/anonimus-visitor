@@ -1,13 +1,17 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, Outlet, useLoaderData, useRouteError } from "@remix-run/react";
+import { Link, Outlet, useLoaderData, useRouteError, useNavigation } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+import ongThemeStyles from "../styles/ong-theme.css?url";
 import { authenticate } from "../shopify.server";
 
-export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
+export const links = () => [
+  { rel: "stylesheet", href: polarisStyles },
+  { rel: "stylesheet", href: ongThemeStyles }
+];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
@@ -25,9 +29,12 @@ import polarisTranslations from "@shopify/polaris/locales/en.json";
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
+  const navigation = useNavigation();
+  const isNavigating = navigation.state !== "idle";
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey} i18n={polarisTranslations}>
+      {isNavigating && <div className="nitro-preloader-bar" />}
       <NavMenu>
         <Link to="/app" rel="home">Overview</Link>
         <Link to="/app/funnel">Funnel &amp; Campaigns</Link>
@@ -38,7 +45,9 @@ export default function App() {
         <Link to="/app/privacy">Privacy Center</Link>
         <Link to="/app/simulator">Interactive Simulator</Link>
       </NavMenu>
-      <Outlet />
+      <div key={navigation.location?.pathname || "nitro-page"} className="nitro-page-container">
+        <Outlet />
+      </div>
     </AppProvider>
   );
 }

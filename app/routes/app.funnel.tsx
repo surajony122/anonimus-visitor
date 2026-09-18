@@ -33,6 +33,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const { admin, session } = await authenticate.admin(request);
     if (session?.shop) shopDomain = session.shop;
 
+    if (!isForceRefresh) {
+      const cached = appCache.get("funnel_data_" + shopDomain);
+      if (cached) {
+        return json(cached);
+      }
+    }
+
     try {
       const response = await admin.graphql(`
         query GetFunnelData {

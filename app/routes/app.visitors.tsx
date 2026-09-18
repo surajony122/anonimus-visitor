@@ -18,16 +18,29 @@ import {
   Banner,
 } from "@shopify/polaris";
 import prisma from "../db.server";
+import { appCache } from "../services/cache.server";
 import { calculateIntentScore } from "../services/intentEngine.server";
 import { decryptValue } from "../services/normalizer.server";
 import { authenticate } from "../shopify.server";
 import { Icon } from "../components/Icon";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const isForceRefresh = url.searchParams.get("refresh") === "true";
+  let shopDomain = "theunniyarcha.myshopify.com";
+
   try {
-    await authenticate.admin(request);
+    const { session } = await authenticate.admin(request);
+    if (session?.shop) shopDomain = session.shop;
   } catch (err) {
     if (err instanceof Response) throw err;
+  }
+
+  if (!isForceRefresh) {
+    const cached = appCache.get("visitors_data_" + shopDomain);
+    if (cached) {
+      return json(cached);
+    }
   }
 
   let visitors: any[] = [];
@@ -219,7 +232,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     };
   });
 
-  return json({ visitors: enriched, totalCount });
+  const result = { visitors: enriched, totalCount };
+  appCache.set("visitors_data_" + shopDomain, result, 15 * 1000);
+  return json(result);
 };
 
 export default function VisitorsList() {
