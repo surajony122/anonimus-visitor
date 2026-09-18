@@ -246,6 +246,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return json({});
 };
 
+
+function safeString(val: any, fallback = ""): string {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === "string") return val.trim();
+  if (typeof val === "number" || typeof val === "boolean") return String(val);
+  if (typeof val === "object") {
+    if (typeof val.title === "string") return val.title.trim();
+    if (typeof val.name === "string") return val.name.trim();
+    if (typeof val.code === "string") return val.code.trim();
+    if (typeof val.label === "string") return val.label.trim();
+    if (typeof val.handle === "string") return val.handle.trim();
+  }
+  return fallback;
+}
+
 export default function FunnelAnalyticsRoute() {
   const loaderData = useLoaderData<typeof loader>();
   const shopDomain = loaderData?.shopDomain || "theunniyarcha.myshopify.com";
@@ -425,13 +440,16 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
       revenue: number;
     }>();
 
-    shopifyProducts.forEach((p: any) => {
-      const price = parseFloat(p.priceRangeV2?.minVariantPrice?.amount || "0");
-      prodMap.set(p.title.toLowerCase(), {
-        id: p.id,
-        title: p.title,
-        handle: p.handle || "",
-        image: p.featuredImage?.url || "",
+    (shopifyProducts || []).forEach((p: any) => {
+      const node = p?.node || p;
+      const title = safeString(node?.title, "Jewellery Item");
+      const pKey = title.toLowerCase();
+      const price = parseFloat(node?.priceRangeV2?.minVariantPrice?.amount || "0");
+      prodMap.set(pKey, {
+        id: node?.id || pKey,
+        title,
+        handle: safeString(node?.handle, ""),
+        image: safeString(node?.featuredImage?.url || node?.image?.url, ""),
         price: price || 2500,
         views: 0,
         repeatViews: 0,
@@ -442,13 +460,13 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
       });
     });
 
-    filteredEvents.forEach((e: any) => {
+    (filteredEvents || []).forEach((e: any) => {
       let meta: any = {};
       try {
         if (e.metadata) meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
       } catch {}
 
-      const pTitle = (meta.title || meta.productTitle || e.productId || "Jewellery Item").trim();
+      const pTitle = safeString(meta.title || meta.productTitle || meta.name || e.productId, "Jewellery Item");
       const pKey = pTitle.toLowerCase();
 
       if (!prodMap.has(pKey)) {
@@ -456,7 +474,7 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
           id: e.productId || pKey,
           title: pTitle,
           handle: "",
-          image: meta.image || "",
+          image: safeString(meta.image, ""),
           price: Number(meta.price || meta.cartValue || 3500),
           views: 0,
           repeatViews: 0,
@@ -482,14 +500,16 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
       }
     });
 
-    filteredOrders.forEach((o: any) => {
+    (filteredOrders || []).forEach((o: any) => {
       o.lineItems?.edges?.forEach((li: any) => {
-        const title = li.node?.title || "";
-        const pKey = title.toLowerCase();
-        if (prodMap.has(pKey)) {
-          const item = prodMap.get(pKey)!;
-          item.orders += (li.node.quantity || 1);
-          item.revenue += parseFloat(li.node.originalUnitPriceSet?.shopMoney?.amount || "0") * (li.node.quantity || 1);
+        const title = safeString(li.node?.title || li.title, "");
+        if (title) {
+          const pKey = title.toLowerCase();
+          if (prodMap.has(pKey)) {
+            const item = prodMap.get(pKey)!;
+            item.orders += (li.node?.quantity || li.quantity || 1);
+            item.revenue += parseFloat(li.node?.originalUnitPriceSet?.shopMoney?.amount || "0") * (li.node?.quantity || 1);
+          }
         }
       });
     });
@@ -515,7 +535,7 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      list = list.filter((p) => p.title.toLowerCase().includes(q));
+      list = list.filter((p) => safeString(p.title).toLowerCase().includes(q));
     }
 
     if (productTierFilter !== "all") {
@@ -626,7 +646,7 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      list = list.filter((c) => c.name.toLowerCase().includes(q) || c.source.toLowerCase().includes(q));
+      list = list.filter((c) => safeString(c.name).toLowerCase().includes(q) || safeString(c.source).toLowerCase().includes(q));
     }
 
     if (campaignTierFilter !== "all") {
@@ -665,7 +685,8 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
 
     // 1. Seed with real Shopify collections
     (shopifyCollections || []).forEach((c: any) => {
-      const name = c.title || "Jewellery Collection";
+      const node = c?.node || c;
+      const name = safeString(node?.title || node?.name, "Jewellery Collection");
       colMap.set(name.toLowerCase(), {
         name,
         views: 0,
@@ -683,7 +704,8 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
         if (e.metadata) meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
       } catch {}
 
-      const colName = meta.collection || meta.collectionTitle || meta.category || (e.eventType === "collection_viewed" ? (meta.title || "Store Collection") : null);
+      const rawCol = meta.collection || meta.collectionTitle || meta.category || (e.eventType === "collection_viewed" ? (meta.title || "Store Collection") : null);
+      const colName = safeString(rawCol, "");
       if (colName) {
         const key = colName.toLowerCase();
         if (!colMap.has(key)) {
@@ -734,7 +756,7 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
     });
 
     if (searchQuery) {
-      list = list.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      list = list.filter((c) => safeString(c.name).toLowerCase().includes(safeString(searchQuery).toLowerCase()));
     }
     return list;
   }, [shopifyCollections, filteredEvents, funnelMetrics, searchQuery]);
@@ -752,9 +774,10 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
 
     // 1. Scan filteredOrders for real discount codes
     (filteredOrders || []).forEach((o: any) => {
-      const code = o.discountCode || o.discountApplications?.edges?.[0]?.node?.title || (o.name && o.totalDiscountsSet?.shopMoney?.amount > 0 ? "AUTO_PROMO" : null);
+      const rawCode = o.discountCode || o.discountApplications?.edges?.[0]?.node?.title || (o.name && o.totalDiscountsSet?.shopMoney?.amount > 0 ? "AUTO_PROMO" : null);
+      const code = safeString(rawCode, "");
       if (code) {
-        const cKey = String(code).toUpperCase().trim();
+        const cKey = code.toUpperCase().trim();
         if (!offerMap.has(cKey)) {
           offerMap.set(cKey, {
             code: cKey,
@@ -780,9 +803,10 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
         if (e.metadata) meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
       } catch {}
 
-      const promo = meta.discountCode || meta.promoCode || meta.coupon;
+      const rawPromo = meta.discountCode || meta.promoCode || meta.coupon;
+      const promo = safeString(rawPromo, "");
       if (promo) {
-        const cKey = String(promo).toUpperCase().trim();
+        const cKey = promo.toUpperCase().trim();
         if (!offerMap.has(cKey)) {
           offerMap.set(cKey, {
             code: cKey,
@@ -823,7 +847,7 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
     });
 
     if (searchQuery) {
-      list = list.filter((o) => o.code.toLowerCase().includes(searchQuery.toLowerCase()) || o.label.toLowerCase().includes(searchQuery.toLowerCase()));
+      list = list.filter((o) => safeString(o.code).toLowerCase().includes(safeString(searchQuery).toLowerCase()) || safeString(o.label).toLowerCase().includes(safeString(searchQuery).toLowerCase()));
     }
     return list;
   }, [filteredOrders, filteredEvents, searchQuery]);
