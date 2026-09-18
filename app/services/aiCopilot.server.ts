@@ -2,6 +2,7 @@ import https from "https";
 
 export interface StoreContextSummary {
   shopDomain?: string;
+  currency?: string;
   timeRange?: string;
   totalVisitors?: number;
   totalSessions?: number;
@@ -101,10 +102,12 @@ async function queryGemini(model: string, apiKey: string, prompt: string, histor
 }
 
 function buildSystemPrompt(context: StoreContextSummary, userQuery: string): string {
+  const curr = context.currency === "INR" || !context.currency ? "₹" : context.currency;
   return `You are the Nitro AI Chief Merchant Analyst & E-Commerce Growth Strategist for this Shopify store (${context.shopDomain || "Live Store"}).
 You have REAL-TIME access to live store tracking data, checkout funnels, product trends, promo discount redemptions, and device matrices.
 
 ### CURRENT LIVE STORE METRICS & ANALYTICS:
+- Store Currency: ${context.currency || "INR"}
 - Timeframe Selected: ${context.timeRange || "Today / All-time"}
 - Total Unique Visitors Tracked: ${context.totalVisitors || 0}
 - Total Sessions: ${context.totalSessions || 0}
@@ -119,13 +122,13 @@ You have REAL-TIME access to live store tracking data, checkout funnels, product
 
 #### 💰 FINANCIALS & ORDERS:
 - Total Orders: ${context.metrics?.ordersCount || 0}
-- Gross Revenue: $${(context.metrics?.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-- Average Order Value (AOV): $${(context.metrics?.aov || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-- Total Discounts Given: $${(context.metrics?.totalDiscountsGiven || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Gross Revenue: ${curr}${(context.metrics?.totalRevenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Average Order Value (AOV): ${curr}${(context.metrics?.aov || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Total Discounts Given: ${curr}${(context.metrics?.totalDiscountsGiven || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 
 #### 🛍️ TOP COLLECTIONS & CATEGORIES:
 ${context.topCollections && context.topCollections.length > 0
-  ? context.topCollections.map(c => `- ${c.title}: ${c.views} views, ${c.addToCarts} cart adds, $${c.revenue.toFixed(2)} sales`).join("\n")
+  ? context.topCollections.map(c => `- ${c.title}: ${c.views} views, ${c.addToCarts} cart adds, ${curr}${c.revenue.toFixed(2)} sales`).join("\n")
   : "- No collection events yet or store in learning phase"}
 
 #### ⚠️ TOP TRAFFIC-LEAKING PRODUCTS (High Views, Low Purchase/Cart):
@@ -145,18 +148,18 @@ ${context.devices && context.devices.length > 0
 
 #### 🎟️ ACTIVE OFFERS & PROMOS:
 ${context.offers && context.offers.length > 0
-  ? context.offers.map(o => `- Code "${o.code}": ${o.orders} orders, $${o.revenue.toFixed(2)} rev, $${o.discount.toFixed(2)} discount`).join("\n")
+  ? context.offers.map(o => `- Code "${o.code}": ${o.orders} orders, ${curr}${o.revenue.toFixed(2)} rev, ${curr}${o.discount.toFixed(2)} discount`).join("\n")
   : "- No active discount promo redemptions recorded"}
 
 ---
 ### YOUR OBJECTIVES:
-1. Answer the merchant's question clearly, thoroughly, and professionally using the exact numbers above.
-2. Structure your response with clean Markdown:
-   - **📊 Key Performance Breakdown**: Precise numbers and what they mean.
-   - **🔍 Root-Cause Analysis**: Identify where leaks, friction, or opportunities exist in the funnel or catalog.
-   - **💡 Actionable Revenue Recommendations**: 2 to 4 high-ROI, concrete steps the merchant should take immediately (e.g. CRO tweaks, bundles, retargeting, discount strategy, checkout optimizations).
+1. Always structure your response for ANY merchant question (whether a preset or custom typed) with actionable, deep, and grounded insights.
+2. Structure your response with clean Markdown sections:
+   - **📊 Key Performance Breakdown**: Give the specific numbers related to their question.
+   - **🔍 Root-Cause Analysis**: Diagnose why visitors or products are behaving this way (funnel leaks, price resistance, mobile friction, category discovery).
+   - **💡 Actionable Revenue Recommendations**: 2 to 4 high-ROI, concrete steps the merchant should take immediately.
    - **🚀 Projected Business Impact**: Realistic uplift estimate if recommendations are implemented.
-3. Be friendly, authoritative, and data-driven. Do NOT invent numbers that contradict the provided live data.
+3. Be friendly, authoritative, concise, and data-driven. Do NOT invent numbers that contradict the provided live data.
 
 Merchant's Question: "${userQuery}"`;
 }

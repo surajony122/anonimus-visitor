@@ -1145,6 +1145,7 @@ I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. 
 
       const storeContext = {
         shopDomain,
+        currency,
         timeRange: timeFilter,
         totalVisitors: funnelMetrics.landings,
         totalSessions: sessions.length,
