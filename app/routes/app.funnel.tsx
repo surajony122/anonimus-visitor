@@ -331,6 +331,102 @@ function formatHandleToTitle(handle: string): string {
     .join(" ");
 }
 
+
+function PaginationControls({
+  currentPage,
+  totalItems,
+  pageSize = 100,
+  onPageChange,
+  label = "items",
+}: {
+  currentPage: number;
+  totalItems: number;
+  pageSize?: number;
+  onPageChange: (newPage: number) => void;
+  label?: string;
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const startIdx = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIdx = Math.min(currentPage * pageSize, totalItems);
+
+  if (totalItems <= pageSize && currentPage === 1) return null;
+
+  
+  const paginatedProducts = useMemo(() => {
+    return productAnalytics.slice((productPage - 1) * PAGE_SIZE, productPage * PAGE_SIZE);
+  }, [productAnalytics, productPage]);
+
+  const paginatedCollections = useMemo(() => {
+    return collectionAnalytics.slice((collectionPage - 1) * PAGE_SIZE, collectionPage * PAGE_SIZE);
+  }, [collectionAnalytics, collectionPage]);
+
+  const paginatedOffers = useMemo(() => {
+    return offerAnalytics.slice((offerPage - 1) * PAGE_SIZE, offerPage * PAGE_SIZE);
+  }, [offerAnalytics, offerPage]);
+
+  const paginatedCampaigns = useMemo(() => {
+    return campaignAnalytics.slice((campaignPage - 1) * PAGE_SIZE, campaignPage * PAGE_SIZE);
+  }, [campaignAnalytics, campaignPage]);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "12px 16px",
+        background: "#fafaf9",
+        borderTop: "1px solid #e2e8f0",
+        fontSize: "12px",
+        color: "#64748b",
+        flexWrap: "wrap",
+        gap: "8px",
+      }}
+    >
+      <div>
+        Showing <strong>{startIdx}</strong> - <strong>{endIdx}</strong> of <strong>{totalItems}</strong> {label}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          style={{
+            padding: "5px 12px",
+            borderRadius: "6px",
+            border: "1px solid #cbd5e1",
+            background: currentPage <= 1 ? "#f1f5f9" : "#ffffff",
+            color: currentPage <= 1 ? "#94a3b8" : "#334155",
+            cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+            fontWeight: 600,
+            fontSize: "12px",
+          }}
+        >
+          ◀ Previous 100
+        </button>
+        <span style={{ fontWeight: 600, color: "#1e293b", fontSize: "12px" }}>
+          Page {currentPage} of {totalPages}
+        </span>
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          style={{
+            padding: "5px 12px",
+            borderRadius: "6px",
+            border: "1px solid #cbd5e1",
+            background: currentPage >= totalPages ? "#f1f5f9" : "#ffffff",
+            color: currentPage >= totalPages ? "#94a3b8" : "#334155",
+            cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+            fontWeight: 600,
+            fontSize: "12px",
+          }}
+        >
+          Next 100 ▶
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function FunnelAnalyticsRoute() {
   const loaderData = useLoaderData<typeof loader>();
   const shopDomain = loaderData?.shopDomain || "theunniyarcha.myshopify.com";
@@ -1741,12 +1837,12 @@ export default function FunnelAnalyticsRoute() {
                 <div>Status</div>
               </div>
 
-              {productAnalytics.length === 0 ? (
+              {paginatedProducts.length === 0 ? (
                 <div style={{ padding: "30px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
                   No products matched your search or filters.
                 </div>
               ) : (
-                productAnalytics.map((p, idx) => (
+                paginatedProducts.map((p, idx) => (
                   <div
                     key={idx}
                     style={{
@@ -1814,6 +1910,13 @@ export default function FunnelAnalyticsRoute() {
                   </div>
                 ))
               )}
+              <PaginationControls
+                currentPage={productPage}
+                totalItems={productAnalytics.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setProductPage}
+                label="products"
+              />
             </div>
           </div>
         )}
@@ -1845,12 +1948,12 @@ export default function FunnelAnalyticsRoute() {
               <div>Status</div>
             </div>
 
-            {collectionAnalytics.length === 0 ? (
+            {paginatedCollections.length === 0 ? (
               <div style={{ padding: "30px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
                 No collections found. Syncing from Shopify store...
               </div>
             ) : (
-              collectionAnalytics.map((col, idx) => (
+              paginatedCollections.map((col, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -1879,6 +1982,13 @@ export default function FunnelAnalyticsRoute() {
                 </div>
               ))
             )}
+            <PaginationControls
+              currentPage={collectionPage}
+              totalItems={collectionAnalytics.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCollectionPage}
+              label="collections"
+            />
           </div>
         )}
 
@@ -1919,7 +2029,7 @@ export default function FunnelAnalyticsRoute() {
                 </div>
               </div>
             ) : (
-              offerAnalytics.map((o, idx) => (
+              paginatedOffers.map((o, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -1945,6 +2055,13 @@ export default function FunnelAnalyticsRoute() {
                 </div>
               ))
             )}
+            <PaginationControls
+              currentPage={offerPage}
+              totalItems={offerAnalytics.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setOfferPage}
+              label="promo offers"
+            />
           </div>
         )}
 
@@ -2037,7 +2154,7 @@ export default function FunnelAnalyticsRoute() {
                   </div>
                 </div>
               ) : (
-                campaignAnalytics.map((c, idx) => (
+                paginatedCampaigns.map((c, idx) => (
                   <div
                     key={idx}
                     style={{

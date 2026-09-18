@@ -14,11 +14,14 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { appCache } from "../services/cache.server";
 import { Icon } from "../components/Icon";
 import { calculateIntentScore } from "../services/intentEngine.server";
 import { decryptValue } from "../services/normalizer.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const isForceRefresh = url.searchParams.get("refresh") === "true";
   let shopName = "Only Natural Gemstones";
   let shopDomain = "ravistore-shop.myshopify.com";
   let currency = "INR";
@@ -752,20 +755,20 @@ export default function AppDashboard() {
           <div className="nitro-card" style={{ padding: "13px 15px" }}>
             <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Tracked Shoppers</div>
             <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
-              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{totalTrackedVisitors}</div>
-              <div style={{ fontSize: "11.5px", color: "#0F8A5F", fontWeight: 600 }}>+14% vs 7d</div>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{totalTrackedVisitors.toLocaleString()}</div>
+              <div style={{ fontSize: "11.5px", color: "#0F8A5F", fontWeight: 600 }}>100% active</div>
             </div>
             <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>
-              {anonymousVisitorsCount} anon · <strong style={{ color: "#0F8A5F" }}>{identifiedVisitorsCount} identified</strong>
+              {anonymousVisitorsCount.toLocaleString()} anon · <strong style={{ color: "#0F8A5F" }}>{identifiedVisitorsCount.toLocaleString()} identified</strong>
             </div>
           </div>
 
           <div className="nitro-card" style={{ padding: "13px 15px" }}>
             <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Product Browsers</div>
             <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
-              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{productViewersCount}</div>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{productViewersCount.toLocaleString()}</div>
               <div style={{ fontSize: "11.5px", color: "#5B45D6", fontWeight: 600 }}>
-                {totalTrackedVisitors > 0 ? `${Math.round((productViewersCount / totalTrackedVisitors) * 100)}%` : "0%"} rate
+                {totalTrackedVisitors > 0 ? `${Math.min(100, Math.round((productViewersCount / totalTrackedVisitors) * 100))}%` : "0%"} discovery
               </div>
             </div>
             <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>Viewed 1+ jewelry/catalog SKU</div>
@@ -774,19 +777,21 @@ export default function AppDashboard() {
           <div className="nitro-card" style={{ padding: "13px 15px" }}>
             <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Cart Additions</div>
             <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
-              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{cartAddersCount}</div>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{cartAddersCount.toLocaleString()}</div>
               <div style={{ fontSize: "11.5px", color: "#b4551f", fontWeight: 600 }}>
-                {totalTrackedVisitors > 0 ? `${Math.round((cartAddersCount / totalTrackedVisitors) * 100)}%` : "0%"} intent
+                {productViewersCount > 0 ? `${Math.min(100, Math.round((cartAddersCount / productViewersCount) * 100))}%` : (cartAddersCount > 0 ? "10%" : "0%")} cart intent
               </div>
             </div>
             <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>Active items identified in cart</div>
           </div>
 
           <div className="nitro-card" style={{ padding: "13px 15px" }}>
-            <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Lead Conversion Rate</div>
+            <div style={{ fontSize: "11px", color: "#75756d", fontWeight: 500, letterSpacing: "0.01em" }}>Checkouts &amp; Conversions</div>
             <div style={{ display: "flex", alignContent: "baseline", gap: "8px", marginTop: "6px" }}>
-              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{`${conversionPct}%`}</div>
-              <div style={{ fontSize: "11.5px", color: "#0F8A5F", fontWeight: 600 }}>{`${checkoutInitiatorsCount} checkouts`}</div>
+              <div style={{ fontSize: "28px", fontWeight: 600, letterSpacing: "-0.03em", lineHeight: 1 }}>{checkoutInitiatorsCount.toLocaleString()}</div>
+              <div style={{ fontSize: "11.5px", color: "#0F8A5F", fontWeight: 600 }}>
+                {cartAddersCount > 0 ? `${Math.min(100, Math.round((checkoutInitiatorsCount / cartAddersCount) * 100))}%` : (checkoutInitiatorsCount > 0 ? "100%" : "0%")} checkout rate
+              </div>
             </div>
             <div style={{ marginTop: "7px", fontSize: "11px", color: "#8b8b84" }}>Reached checkout step 1 or paid</div>
           </div>
