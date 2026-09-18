@@ -255,7 +255,38 @@ export default function VisitorsList() {
       revalidator.revalidate();
       setLastRefreshedAt(new Date().toLocaleTimeString());
     }, 15000);
-    return () => clearInterval(interval);
+    const handleExportVisitorsCSV = () => {
+    const listToExport = filtered && filtered.length > 0 ? filtered : visitors;
+    if (!listToExport || listToExport.length === 0) return;
+    const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Email", "Phone", "Device", "OS", "Browser", "Cart Value", "Sessions", "First Seen", "Last Seen"];
+    const rows = listToExport.map((v: any) => [
+      v.visitorId,
+      v.status || (v.primaryEmail || v.primaryPhone ? "identified" : "anonymous"),
+      v.intentScore || 0,
+      v.intentTier || "low",
+      v.primaryEmail || "Anonymous",
+      v.primaryPhone || "Anonymous",
+      v.deviceCategory || "Mobile",
+      v.os || "Device OS",
+      v.browser || "Browser",
+      v.cartValue || 0,
+      v.sessions?.length || 1,
+      v.firstSeenAt ? new Date(v.firstSeenAt).toISOString() : "",
+      v.lastSeenAt ? new Date(v.lastSeenAt).toISOString() : "",
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [
+      headers.map(h => `"${h}"`).join(","),
+      ...rows.map(r => r.map(c => `"${String(c !== null && c !== undefined ? c : '').replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+    const link = document.createElement("a");
+    link.href = encodeURI(csvContent);
+    link.download = `nitro_visitors_${statusFilter}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return () => clearInterval(interval);
   }, [autoRefresh, selectedVisitor, revalidator]);
 
   const [timeFilter, setTimeFilter] = useState("all");
@@ -310,6 +341,10 @@ export default function VisitorsList() {
       }
       subtitle={`Displaying ${filtered.length} active shoppers tracked across the store`}
       secondaryActions={[
+        {
+          content: "📥 Export All Visitors (CSV)",
+          onAction: handleExportVisitorsCSV,
+        },
         {
           content: autoRefresh ? "🟢 Live Auto-Refresh (15s)" : "⏸️ Auto-Refresh: Off",
           onAction: () => setAutoRefresh(!autoRefresh),

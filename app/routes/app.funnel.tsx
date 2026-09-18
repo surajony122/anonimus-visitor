@@ -183,23 +183,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopRecord: any = null;
 
   try {
-    const dbPromise = Promise.all([
-      prisma.shop.findUnique({ where: { shopDomain } }),
+    const [shop, evts, sess] = await Promise.all([
+      prisma.shop.findUnique({ where: { shopDomain } }).catch(() => null),
       prisma.event.findMany({
-        take: 2500,
+        take: 1500,
+        select: {
+          id: true,
+          shopId: true,
+          visitorId: true,
+          sessionId: true,
+          eventType: true,
+          timestamp: true,
+          pageUrl: true,
+          productId: true,
+          variantId: true,
+          collectionId: true,
+          cartId: true,
+          metadata: true,
+        },
         orderBy: { timestamp: "desc" },
-      }),
+      }).catch(() => []),
       prisma.storefrontSession.findMany({
-        take: 1000,
+        take: 600,
         orderBy: { startedAt: "desc" },
-      }),
+      }).catch(() => []),
     ]);
-
-    const timeoutPromise = new Promise<any>((_, reject) =>
-      setTimeout(() => reject(new Error("Funnel DB Timeout")), 6000)
-    );
-
-    const [shop, evts, sess] = await Promise.race([dbPromise, timeoutPromise]);
     shopRecord = shop;
     events = evts || [];
     sessions = sess || [];
