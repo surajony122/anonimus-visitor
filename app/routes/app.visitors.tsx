@@ -246,7 +246,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function VisitorsList() {
-  const { visitors } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  const visitors = data?.visitors || [];
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";

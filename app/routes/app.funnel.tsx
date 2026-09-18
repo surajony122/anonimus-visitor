@@ -239,18 +239,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function FunnelAnalyticsRoute() {
-  const {
-    shopDomain,
-    shopName,
-    currency,
-    shopifyProducts,
-    shopifyOrders,
-    events,
-    sessions,
-    metaSettings,
-    liveMetaCampaigns,
-    metaApiError,
-  } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+  const shopDomain = loaderData?.shopDomain || "theunniyarcha.myshopify.com";
+  const shopName = loaderData?.shopName || "Only Natural Gemstones / Unniyarcha Fine Jewellery";
+  const currency = loaderData?.currency || "INR";
+  const shopifyProducts = loaderData?.shopifyProducts || [];
+  const shopifyCollections = loaderData?.shopifyCollections || [];
+  const shopifyOrders = loaderData?.shopifyOrders || [];
+  const events = loaderData?.events || [];
+  const sessions = loaderData?.sessions || [];
+  const metaSettings = loaderData?.metaSettings || {};
+  const liveMetaCampaigns = loaderData?.liveMetaCampaigns || [];
+  const metaApiError = loaderData?.metaApiError || null;
 
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -258,128 +258,8 @@ export default function FunnelAnalyticsRoute() {
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
 
-
-  // Send query to AI Copilot
-  const handleSendCopilotQuery = async (queryToSend?: string) => {
-    const query = (queryToSend || copilotInput).trim();
-    if (!query || isCopilotLoading) return;
-
-    setCopilotInput("");
-    const userMsg = {
-      role: "user" as const,
-      content: query,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setCopilotHistory((prev) => [...prev, userMsg]);
-    setIsCopilotLoading(true);
-
-    try {
-      const storeContext = {
-        shopDomain,
-        timeRange: timeFilter,
-        totalVisitors: funnelMetrics.landings,
-        totalSessions: sessions.length,
-        totalEvents: filteredEvents.length,
-        funnel: {
-          visitors: funnelMetrics.landings,
-          pdpViews: funnelMetrics.productViews,
-          cartAdds: funnelMetrics.cartAdds,
-          checkouts: funnelMetrics.checkouts,
-          purchases: funnelMetrics.orders,
-          pdpRate: funnelMetrics.pdpRate,
-          cartRate: funnelMetrics.cartRate,
-          checkoutRate: funnelMetrics.checkoutRate,
-          purchaseRate: funnelMetrics.orderRate,
-        },
-        metrics: {
-          ordersCount: funnelMetrics.orders,
-          totalRevenue: shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0),
-          aov: funnelMetrics.orders > 0 ? (shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0) / funnelMetrics.orders) : 0,
-          totalDiscountsGiven: offerAnalytics.reduce((acc, o) => acc + o.discountAmount, 0),
-        },
-        topCollections: collectionAnalytics.slice(0, 5).map(c => ({ title: c.name, views: c.views, addToCarts: c.carts, revenue: parseFloat(c.revenue.replace(/[^0-9.]/g, '')) || 0 })),
-        topLeakingProducts: productAnalytics.filter(p => p.status === 'leaking').slice(0, 5).map(p => ({ title: p.title, views: p.views, addToCarts: p.cartAdds, purchases: 0, dropRate: `${100 - p.cartRate}%` })),
-        winningProducts: productAnalytics.filter(p => p.status === 'trending' || p.status === 'high_ticket').slice(0, 5).map(p => ({ title: p.title, views: p.views, purchases: p.cartAdds, convRate: `${p.cartRate}%` })),
-        devices: deviceAnalytics.map(d => ({ device: d.device, visitors: d.visitors, share: d.checkoutRate })),
-        offers: offerAnalytics.map(o => ({ code: o.code, orders: o.ordersCount, revenue: o.capturedRevenue, discount: o.discountAmount }))
-      };
-
-      const res = await fetch("/api/ai-copilot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: query,
-          context: storeContext,
-          history: copilotHistory.slice(-6).map(m => ({ role: m.role, content: m.content })),
-          apiKey: geminiApiKey || undefined
-        })
-      });
-
-      const data = await res.json();
-
-      if (data.reply) {
-        setCopilotHistory((prev) => [
-          ...prev,
-          {
-            role: "model",
-            content: data.reply,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            source: data.source,
-            modelUsed: data.modelUsed
-          }
-        ]);
-      } else {
-        setCopilotHistory((prev) => [
-          ...prev,
-          {
-            role: "model",
-            content: "⚠️ I encountered an issue analyzing the store data. Please try again.",
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            source: "autonomous"
-          }
-        ]);
-      }
-    } catch (err: any) {
-      setCopilotHistory((prev) => [
-        ...prev,
-        {
-          role: "model",
-          content: `⚠️ Connection error: ${err.message || "Failed to reach AI service"}. Please check your network or try again.`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          source: "autonomous"
-        }
-      ]);
-    } finally {
-      setIsCopilotLoading(false);
-    }
-  };
-
   // Navigation & View Filters
   const [activeTab, setActiveTab] = useState<"copilot" | "funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("copilot");
-  
-  // AI Copilot State
-  const [copilotHistory, setCopilotHistory] = useState<Array<{ role: "user" | "model"; content: string; time: string; source?: string; modelUsed?: string }>>([
-    {
-      role: "model",
-      content: `### 🤖 Welcome to Nitro AI Merchant Copilot!
-I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have real-time access to your live tracking data, conversion funnel, product catalog, promo codes, and Meta ad attribution.
-
-**Quick snapshot of your store right now:**
-- 👥 **Total Tracked Traffic:** **${shopifyProducts.length > 0 ? "Live Connected" : "Connecting..."}**
-- 🛒 **Store Currency:** **${currency}**
-- 🛍️ **Catalog Analyzed:** **${shopifyProducts.length}** active products & **${shopifyCollections ? shopifyCollections.length : 0}** collections
-
-*Click any prompt below or ask me any question about today's trends, drop-offs, or revenue strategies!*`,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      source: "gemini",
-      modelUsed: "gemini-3.6-flash"
-    }
-  ]);
-  const [copilotInput, setCopilotInput] = useState("");
-  const [isCopilotLoading, setIsCopilotLoading] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState("");
-  const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
   const [timeFilter, setTimeFilter] = useState("7d");
   const [searchQuery, setSearchQuery] = useState("");
   const [productTierFilter, setProductTierFilter] = useState("all");
@@ -391,6 +271,29 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
   const [metaAccessToken, setMetaAccessToken] = useState(metaSettings?.accessToken || "");
   const [metaPixelId, setMetaPixelId] = useState(metaSettings?.pixelId || "");
   const [metaAdAccountId, setMetaAdAccountId] = useState(metaSettings?.adAccountId || "");
+
+  // AI Copilot State
+  const [copilotHistory, setCopilotHistory] = useState<Array<{ role: "user" | "model"; content: string; time: string; source?: string; modelUsed?: string }>>([
+    {
+      role: "model",
+      content: `### 🤖 Welcome to Nitro AI Merchant Copilot!
+I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have real-time access to your live tracking data, conversion funnel, product catalog, promo codes, and Meta ad attribution.
+
+**Quick snapshot of your store right now:**
+- 👥 **Total Tracked Traffic:** **${shopifyProducts.length > 0 ? "Live Connected" : "Connecting..."}**
+- 🛒 **Store Currency:** **${currency}**
+- 🛍️ **Catalog Analyzed:** **${shopifyProducts.length}** active products & **${shopifyCollections.length}** collections
+
+*Click any prompt below or ask me any question about today's trends, drop-offs, or revenue strategies!*`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      source: "gemini",
+      modelUsed: "gemini-3.6-flash"
+    }
+  ]);
+  const [copilotInput, setCopilotInput] = useState("");
+  const [isCopilotLoading, setIsCopilotLoading] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
 
   const handleSaveMeta = () => {
     const fd = new FormData();
@@ -1031,6 +934,103 @@ I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have r
     }
     return list;
   }, [sessions, filteredEvents, funnelMetrics, searchQuery]);
+
+
+  // Send query to AI Copilot
+  const handleSendCopilotQuery = async (queryToSend?: string) => {
+    const query = (queryToSend || copilotInput).trim();
+    if (!query || isCopilotLoading) return;
+
+    setCopilotInput("");
+    const userMsg = {
+      role: "user" as const,
+      content: query,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setCopilotHistory((prev) => [...prev, userMsg]);
+    setIsCopilotLoading(true);
+
+    try {
+      const storeContext = {
+        shopDomain,
+        timeRange: timeFilter,
+        totalVisitors: funnelMetrics.landings,
+        totalSessions: sessions.length,
+        totalEvents: filteredEvents.length,
+        funnel: {
+          visitors: funnelMetrics.landings,
+          pdpViews: funnelMetrics.productViews,
+          cartAdds: funnelMetrics.cartAdds,
+          checkouts: funnelMetrics.checkouts,
+          purchases: funnelMetrics.orders,
+          pdpRate: funnelMetrics.pdpRate,
+          cartRate: funnelMetrics.cartRate,
+          checkoutRate: funnelMetrics.checkoutRate,
+          purchaseRate: funnelMetrics.orderRate,
+        },
+        metrics: {
+          ordersCount: funnelMetrics.orders,
+          totalRevenue: shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0),
+          aov: funnelMetrics.orders > 0 ? (shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0) / funnelMetrics.orders) : 0,
+          totalDiscountsGiven: offerAnalytics.reduce((acc, o) => acc + o.discountAmount, 0),
+        },
+        topCollections: collectionAnalytics.slice(0, 5).map(c => ({ title: c.name, views: c.views, addToCarts: c.carts, revenue: parseFloat(c.revenue.replace(/[^0-9.]/g, '')) || 0 })),
+        topLeakingProducts: productAnalytics.filter(p => p.status === 'leaking').slice(0, 5).map(p => ({ title: p.title, views: p.views, addToCarts: p.cartAdds, purchases: 0, dropRate: `${100 - p.cartRate}%` })),
+        winningProducts: productAnalytics.filter(p => p.status === 'trending' || p.status === 'high_ticket').slice(0, 5).map(p => ({ title: p.title, views: p.views, purchases: p.cartAdds, convRate: `${p.cartRate}%` })),
+        devices: deviceAnalytics.map(d => ({ device: d.device, visitors: d.visitors, share: d.checkoutRate })),
+        offers: offerAnalytics.map(o => ({ code: o.code, orders: o.ordersCount, revenue: o.capturedRevenue, discount: o.discountAmount }))
+      };
+
+      const res = await fetch("/api/ai-copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: query,
+          context: storeContext,
+          history: copilotHistory.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          apiKey: geminiApiKey || undefined
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.reply) {
+        setCopilotHistory((prev) => [
+          ...prev,
+          {
+            role: "model",
+            content: data.reply,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            source: data.source,
+            modelUsed: data.modelUsed
+          }
+        ]);
+      } else {
+        setCopilotHistory((prev) => [
+          ...prev,
+          {
+            role: "model",
+            content: "⚠️ I encountered an issue analyzing the store data. Please try again.",
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            source: "autonomous"
+          }
+        ]);
+      }
+    } catch (err: any) {
+      setCopilotHistory((prev) => [
+        ...prev,
+        {
+          role: "model",
+          content: `⚠️ Connection error: ${err.message || "Failed to reach AI service"}. Please check your network or try again.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          source: "autonomous"
+        }
+      ]);
+    } finally {
+      setIsCopilotLoading(false);
+    }
+  };
 
   return (
     <Page fullWidth>

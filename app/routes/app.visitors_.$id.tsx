@@ -207,7 +207,20 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export default function VisitorDetailRoute() {
-  const { visitor } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  const visitor = data?.visitor || {
+    id: "unknown",
+    visitorId: "unknown",
+    status: "anonymous",
+    firstSeenAt: new Date().toISOString(),
+    lastSeenAt: new Date().toISOString(),
+    identities: [],
+    events: [],
+    auditLogs: [],
+    sessions: [],
+    deviceInfo: {},
+    intent: { score: 0, tier: "low", breakdown: {} }
+  };
   const navigate = useNavigate();
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
