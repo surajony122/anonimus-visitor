@@ -129,32 +129,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // ALWAYS QUERY DATABASE FOR VISITOR AND EVENT DATA WITH TIMEOUT & TAKE LIMIT
   try {
-    const fetchVisitors = prisma.visitor.findMany({
-      take: 60,
-      include: {
-        sessions: { orderBy: { startedAt: "desc" }, take: 3 },
-        events: { orderBy: { timestamp: "desc" }, take: 15 },
-        identities: true,
-        customerLinks: { include: { customer: true } },
-      },
-      orderBy: { lastSeenAt: "desc" },
-    });
+    const [realTotalVisitors, realIdentifiedCount, realTotalEvents, activeVisitors] = await Promise.all([
+      prisma.visitor.count().catch(() => 0),
+      prisma.visitor.count({ where: { status: "identified" } }).catch(() => 0),
+      prisma.event.count().catch(() => 0),
+      prisma.visitor.findMany({
+        take: 250,
+        include: {
+          sessions: { orderBy: { startedAt: "desc" }, take: 3 },
+          events: { orderBy: { timestamp: "desc" }, take: 15 },
+          identities: true,
+          customerLinks: { include: { customer: true } },
+        },
+        orderBy: { lastSeenAt: "desc" },
+      }).catch(() => []),
+    ]);
 
-    const timeout = new Promise<any[]>((_, reject) =>
-      setTimeout(() => reject(new Error("Dashboard DB Timeout")), 6000)
-    );
-
-    const combinedVisitors = await Promise.race([fetchVisitors, timeout]);
-    const activeVisitors = combinedVisitors;
-
-    if (activeVisitors.length > 0) {
-      totalTrackedVisitors = activeVisitors.length;
-      anonymousVisitorsCount = activeVisitors.filter((v) => v.status === "anonymous").length;
-      identifiedVisitorsCount = activeVisitors.filter((v) => v.status === "identified").length;
+    if (activeVisitors.length > 0 || realTotalVisitors > 0) {
+      totalTrackedVisitors = realTotalVisitors || activeVisitors.length;
+      identifiedVisitorsCount = realIdentifiedCount || activeVisitors.filter((v) => v.status === "identified").length;
+      anonymousVisitorsCount = Math.max(0, totalTrackedVisitors - identifiedVisitorsCount);
+      totalEventsLogged = realTotalEvents || 0;
       isPixelActive = true;
 
       activeVisitors.forEach((v) => {
-        totalEventsLogged += v.events.length;
         const hasPView = v.events.some((e) => e.eventType === "product_viewed");
         const hasCart = v.events.some((e) => e.eventType === "product_added_to_cart");
         const hasCheckout = v.events.some((e) => e.eventType === "checkout_started" || e.eventType === "checkout_completed");
@@ -166,7 +164,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
       const latestEvent = await prisma.event.findFirst({
         orderBy: { timestamp: "desc" },
-      });
+      }).catch(() => null);
 
       if (latestEvent) {
         lastEventTimestamp = latestEvent.timestamp.toISOString();

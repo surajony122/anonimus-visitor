@@ -186,11 +186,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const dbPromise = Promise.all([
       prisma.shop.findUnique({ where: { shopDomain } }),
       prisma.event.findMany({
-        take: 400,
+        take: 2500,
         orderBy: { timestamp: "desc" },
       }),
       prisma.storefrontSession.findMany({
-        take: 150,
+        take: 1000,
         orderBy: { startedAt: "desc" },
       }),
     ]);

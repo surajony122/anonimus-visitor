@@ -31,26 +31,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   let visitors: any[] = [];
+  let totalCount = 0;
   try {
-    const fetchVisitorsPromise = prisma.visitor.findMany({
-      take: 80,
-      include: {
-        sessions: { orderBy: { startedAt: "desc" }, take: 5 },
-        events: { orderBy: { timestamp: "desc" }, take: 15 },
-        identities: true,
-        customerLinks: { include: { customer: true } },
-      },
-      orderBy: { lastSeenAt: "desc" },
-    });
+    const [fetchVisitors, realCount] = await Promise.all([
+      prisma.visitor.findMany({
+        take: 300,
+        include: {
+          sessions: { orderBy: { startedAt: "desc" }, take: 5 },
+          events: { orderBy: { timestamp: "desc" }, take: 15 },
+          identities: true,
+          customerLinks: { include: { customer: true } },
+        },
+        orderBy: { lastSeenAt: "desc" },
+      }).catch(() => []),
+      prisma.visitor.count().catch(() => 0),
+    ]);
 
-    const timeoutPromise = new Promise<any[]>((_, reject) =>
-      setTimeout(() => reject(new Error("DB Timeout")), 6000)
-    );
-
-    visitors = await Promise.race([fetchVisitorsPromise, timeoutPromise]);
+    visitors = fetchVisitors;
+    totalCount = realCount || visitors.length;
   } catch (dbErr) {
     console.warn("Visitors DB query fallback:", dbErr);
     visitors = [];
+    totalCount = 0;
   }
 
   const enriched = visitors.map((v) => {
@@ -217,7 +219,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     };
   });
 
-  return json({ visitors: enriched });
+  return json({ visitors: enriched, totalCount });
 };
 
 export default function VisitorsList() {
