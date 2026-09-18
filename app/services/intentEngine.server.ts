@@ -1,4 +1,4 @@
-﻿import prisma from "../db.server";
+import prisma from "../db.server";
 import { WebhookDispatcher } from "./webhookDispatcher.server";
 
 export interface IntentSignals {
@@ -200,6 +200,37 @@ export async function processVisitorIntentAndTriggers(shopId: string, visitorId:
         status: visitor.status,
         intentScore: intent.score,
         intentTier: intent.tier,
+        timestamp: new Date().toISOString(),
+        customer: customer
+          ? {
+              email: customer.emailReference || undefined,
+              phone: customer.phoneReference || undefined,
+              firstName: customer.firstName || undefined,
+              lastName: customer.lastName || undefined,
+              shopifyCustomerId: customer.shopifyCustomerId,
+            }
+          : undefined,
+        recentEvents: events.slice(0, 5).map((e) => ({
+          eventType: e.eventType,
+          timestamp: e.timestamp.toISOString(),
+          productId: e.productId,
+          pageUrl: e.pageUrl,
+        })),
+      });
+    }
+
+    // High-Intent Cart Abandonment Trigger
+    if (addToCart > 0 && checkoutsCompleted === 0 && intent.score >= 50) {
+      const customer = visitor.customerLinks[0]?.customer;
+      WebhookDispatcher.dispatch(shopId, "cart_abandoned", {
+        event: "cart_abandoned",
+        shopDomain,
+        visitorId,
+        status: visitor.status,
+        intentScore: intent.score,
+        intentTier: intent.tier,
+        cartValue: cartVal,
+        itemsInCart: addToCart,
         timestamp: new Date().toISOString(),
         customer: customer
           ? {

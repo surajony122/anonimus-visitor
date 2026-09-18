@@ -3,6 +3,7 @@ import { json } from "@remix-run/node";
 import prisma from "../db.server";
 import { processVisitorIntentAndTriggers } from "../services/intentEngine.server";
 import { IdentityEngine } from "../services/identityEngine.server";
+import { appCache } from "../services/cache.server";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -183,6 +184,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Background intent evaluation and webhook trigger dispatching
     processVisitorIntentAndTriggers(shopId, visitor_id, shopDomain).catch(() => {});
+
+    // Invalidate stale aggregate cache
+    appCache.invalidate("funnel_data_");
 
     return json(
       {

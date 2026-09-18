@@ -17,8 +17,11 @@ import {
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { fetchMetaCampaigns } from "../services/metaEngine.server";
+import { appCache } from "../services/cache.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const url = new URL(request.url);
+  const isForceRefresh = url.searchParams.get("refresh") === "true";
   let shopDomain = "theunniyarcha.myshopify.com";
   let shopName = "Unniyarcha Fine Jewellery";
   let currency = "INR";
@@ -232,7 +235,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.warn("Meta read fetch warning:", mErr);
   }
 
-  return json({
+  const loaderPayload = {
     shopDomain,
     shopName,
     currency,
@@ -244,7 +247,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     metaSettings,
     liveMetaCampaigns,
     metaApiError,
-  });
+  };
+  appCache.set("funnel_data_" + shopDomain, loaderPayload, 30 * 1000);
+  return json(loaderPayload);
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -361,7 +366,49 @@ export default function FunnelAnalyticsRoute() {
       if (typeof document !== 'undefined' && document.hidden) return;
       revalidator.revalidate();
     }, 15000);
-    return () => clearInterval(interval);
+    // 📊 Multi-Format CSV Exports
+  const handleExportFunnelCSV = () => {
+    const totalRev = shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0);
+    const headers = ["Metric", "Value", "Conversion_Rate", "Description"];
+    const rows = [
+      ["Storefront Visitors", funnelMetrics.landings, "100%", "Total unique shoppers tracked on store"],
+      ["Product Page Views (PDP)", funnelMetrics.productViews, funnelMetrics.pdpRate, "Shoppers who explored product detail pages"],
+      ["Cart Additions", funnelMetrics.cartAdds, funnelMetrics.cartRate, "Shoppers who added items to bag"],
+      ["Checkouts Initiated", funnelMetrics.checkouts, funnelMetrics.checkoutRate, "Shoppers who started checkout"],
+      ["Completed Orders", funnelMetrics.orders, funnelMetrics.orderRate, "Shoppers who completed paid purchase"],
+      ["Gross Revenue", `${currency} ${totalRev.toFixed(2)}`, "-", "Total order revenue recorded"],
+      ["Average Order Value (AOV)", `${currency} ${funnelMetrics.orders > 0 ? (totalRev / funnelMetrics.orders).toFixed(2) : "0.00"}`, "-", "Average order value per paying customer"],
+    ];
+    const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const link = document.createElement("a");
+    link.href = encodeURI(csv);
+    link.download = `nitro_funnel_analytics_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportProductsCSV = () => {
+    const headers = ["Product_Title", "Price", "Page_Views", "Cart_Adds", "Completed_Orders", "Cart_Rate", "Status"];
+    const rows = productAnalytics.map(p => [
+      p.title,
+      p.price,
+      p.views,
+      p.cartAdds,
+      p.orders,
+      `${p.cartRate}%`,
+      p.status
+    ]);
+    const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const link = document.createElement("a");
+    link.href = encodeURI(csv);
+    link.download = `nitro_product_analytics_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return () => clearInterval(interval);
   }, [autoRefresh, revalidator]);
 
   // Filter events by Time Range
@@ -1172,6 +1219,46 @@ export default function FunnelAnalyticsRoute() {
             >
               🔄 Refresh
             </Button>
+
+            <button
+              onClick={handleExportFunnelCSV}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "6px 12px",
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "#334155",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
+              }}
+            >
+              <span>📥 Export Funnel (CSV)</span>
+            </button>
+
+            <button
+              onClick={handleExportProductsCSV}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "6px 12px",
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "#334155",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
+              }}
+            >
+              <span>🛍️ Export Catalog (CSV)</span>
+            </button>
           </div>
         </div>
 
