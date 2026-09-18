@@ -18,6 +18,7 @@ import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { fetchMetaCampaigns } from "../services/metaEngine.server";
 import { appCache } from "../services/cache.server";
+import { SkeletonTable, SkeletonFunnel, SkeletonKpiCards } from "../components/SkeletonLoader";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
@@ -446,6 +447,7 @@ export default function FunnelAnalyticsRoute() {
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
+  const [isPending, startTransition] = React.useTransition();
 
   // Navigation & View Filters
   const [activeTab, setActiveTab] = useState<"funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("funnel");
@@ -1326,7 +1328,7 @@ export default function FunnelAnalyticsRoute() {
               ].map((t) => (
                 <button
                   key={t.value}
-                  onClick={() => setTimeFilter(t.value)}
+                  onClick={() => startTransition(() => setTimeFilter(t.value))}
                   style={{
                     padding: "5px 12px",
                     borderRadius: "4px",
@@ -1395,6 +1397,9 @@ export default function FunnelAnalyticsRoute() {
         </div>
 
         {/* 2. TOP KPI CARDS */}
+        {isPending || isRefreshing ? (
+          <SkeletonKpiCards count={4} />
+        ) : (
         <div style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
@@ -1456,6 +1461,7 @@ export default function FunnelAnalyticsRoute() {
             <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>Captured conversions</div>
           </div>
         </div>
+        )}
 
         {/* 3. SEGMENTED TABS BAR & SEARCH INPUT */}
         <div style={{
@@ -1476,7 +1482,7 @@ export default function FunnelAnalyticsRoute() {
           }}>
 
             <button
-              onClick={() => setActiveTab("funnel")}
+              onClick={() => startTransition(() => setActiveTab("funnel"))}
               style={{
                 padding: "6px 12px",
                 borderRadius: "6px",
@@ -1493,7 +1499,7 @@ export default function FunnelAnalyticsRoute() {
             </button>
 
             <button
-              onClick={() => setActiveTab("products")}
+              onClick={() => startTransition(() => setActiveTab("products"))}
               style={{
                 padding: "6px 12px",
                 borderRadius: "6px",
@@ -1510,7 +1516,7 @@ export default function FunnelAnalyticsRoute() {
             </button>
 
             <button
-              onClick={() => setActiveTab("collections")}
+              onClick={() => startTransition(() => setActiveTab("collections"))}
               style={{
                 padding: "6px 12px",
                 borderRadius: "6px",
@@ -1527,7 +1533,7 @@ export default function FunnelAnalyticsRoute() {
             </button>
 
             <button
-              onClick={() => setActiveTab("offers")}
+              onClick={() => startTransition(() => setActiveTab("offers"))}
               style={{
                 padding: "6px 12px",
                 borderRadius: "6px",
@@ -1544,7 +1550,7 @@ export default function FunnelAnalyticsRoute() {
             </button>
 
             <button
-              onClick={() => setActiveTab("campaigns")}
+              onClick={() => startTransition(() => setActiveTab("campaigns"))}
               style={{
                 padding: "6px 12px",
                 borderRadius: "6px",
@@ -1561,7 +1567,7 @@ export default function FunnelAnalyticsRoute() {
             </button>
 
             <button
-              onClick={() => setActiveTab("devices")}
+              onClick={() => startTransition(() => setActiveTab("devices"))}
               style={{
                 padding: "6px 12px",
                 borderRadius: "6px",
@@ -1583,7 +1589,7 @@ export default function FunnelAnalyticsRoute() {
               type="text"
               placeholder="Search catalog, items, codes..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => startTransition(() => setSearchQuery(e.target.value))}
               style={{
                 width: "100%",
                 padding: "7px 12px",
@@ -1799,6 +1805,9 @@ export default function FunnelAnalyticsRoute() {
         {/* TAB 2: PRODUCT TRENDS & LEAKS                                             */}
         {/* ========================================================================= */}
         {activeTab === "products" && (
+          isPending || isRefreshing ? (
+            <SkeletonTable rows={8} columns={7} columnTemplate="minmax(240px, 2.5fr) 100px 90px 100px 90px 100px 110px" />
+          ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             
             {/* Filter pills */}
@@ -1812,7 +1821,7 @@ export default function FunnelAnalyticsRoute() {
                 ].map((tier) => (
                   <button
                     key={tier.value}
-                    onClick={() => setProductTierFilter(tier.value)}
+                    onClick={() => startTransition(() => setProductTierFilter(tier.value))}
                     style={{
                       padding: "5px 14px",
                       borderRadius: "20px",
@@ -1940,6 +1949,7 @@ export default function FunnelAnalyticsRoute() {
               />
             </div>
           </div>
+          )
         )}
 
         {/* ========================================================================= */}

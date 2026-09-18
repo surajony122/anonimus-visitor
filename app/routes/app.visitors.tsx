@@ -23,6 +23,7 @@ import { calculateIntentScore } from "../services/intentEngine.server";
 import { decryptValue } from "../services/normalizer.server";
 import { authenticate } from "../shopify.server";
 import { Icon } from "../components/Icon";
+import { SkeletonTable } from "../components/SkeletonLoader";
 
 function safeIso(val: any, fallback = new Date().toISOString()): string {
   if (!val) return fallback;
@@ -282,6 +283,7 @@ export default function VisitorsList() {
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
+  const [isPending, startTransition] = React.useTransition();
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [intentFilter, setIntentFilter] = useState("all");
@@ -426,7 +428,7 @@ export default function VisitorsList() {
               label=""
               placeholder="Search visitor ID, email, phone, OS, browser..."
               value={searchQuery}
-              onChange={(val) => setSearchQuery(val)}
+              onChange={(val) => startTransition(() => setSearchQuery(val))}
               autoComplete="off"
               clearButton
               onClearButtonClick={() => setSearchQuery("")}
@@ -434,9 +436,9 @@ export default function VisitorsList() {
           </div>
 
           <ButtonGroup variant="segmented">
-            <Button pressed={statusFilter === "all"} onClick={() => setStatusFilter("all")}>All</Button>
-            <Button pressed={statusFilter === "identified"} onClick={() => setStatusFilter("identified")}>Identified</Button>
-            <Button pressed={statusFilter === "anonymous"} onClick={() => setStatusFilter("anonymous")}>Anonymous</Button>
+            <Button pressed={statusFilter === "all"} onClick={() => startTransition(() => setStatusFilter("all"))}>All</Button>
+            <Button pressed={statusFilter === "identified"} onClick={() => startTransition(() => setStatusFilter("identified"))}>Identified</Button>
+            <Button pressed={statusFilter === "anonymous"} onClick={() => startTransition(() => setStatusFilter("anonymous"))}>Anonymous</Button>
           </ButtonGroup>
 
           <div style={{ width: "160px" }}>
@@ -450,7 +452,7 @@ export default function VisitorsList() {
                 { label: "Low Intent", value: "low" },
               ]}
               value={intentFilter}
-              onChange={(val) => setIntentFilter(val)}
+              onChange={(val) => startTransition(() => setIntentFilter(val))}
             />
           </div>
 
@@ -464,7 +466,7 @@ export default function VisitorsList() {
                 { label: "Last 7 Days", value: "7d" },
               ]}
               value={timeFilter}
-              onChange={(val) => setTimeFilter(val)}
+              onChange={(val) => startTransition(() => setTimeFilter(val))}
             />
           </div>
         </div>

@@ -169,3 +169,30 @@ body {
   z-index: 9999999;
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
 }
+
+/* Skeleton Shimmer Loading Animations */
+@keyframes nitroShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.nitro-skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: nitroShimmer 1.4s ease-in-out infinite;
+  display: inline-block;
+}
+
+.nitro-filter-transition {
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.nitro-filter-loading {
+  opacity: 0.6;
+  filter: grayscale(20%);
+  pointer-events: none;
+}

@@ -15,6 +15,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { appCache } from "../services/cache.server";
+import { SkeletonTable, SkeletonKpiCards } from "../components/SkeletonLoader";
 import { Icon } from "../components/Icon";
 import { calculateIntentScore } from "../services/intentEngine.server";
 import { decryptValue } from "../services/normalizer.server";
@@ -962,25 +963,25 @@ export default function AppDashboard() {
             <ButtonGroup>
               <button
                 className={visitorFilter === "all" ? "nitro-btn-primary" : "nitro-btn-secondary"}
-                onClick={() => setVisitorFilter("all")}
+                onClick={() => startTransition(() => setVisitorFilter("all"))}
               >
                 All ({visitorsData.length})
               </button>
               <button
                 className={visitorFilter === "high_intent" ? "nitro-btn-primary" : "nitro-btn-secondary"}
-                onClick={() => setVisitorFilter("high_intent")}
+                onClick={() => startTransition(() => setVisitorFilter("high_intent"))}
               >
                 High Intent (60+)
               </button>
               <button
                 className={visitorFilter === "cart" ? "nitro-btn-primary" : "nitro-btn-secondary"}
-                onClick={() => setVisitorFilter("cart")}
+                onClick={() => startTransition(() => setVisitorFilter("cart"))}
               >
                 In Cart
               </button>
               <button
                 className={visitorFilter === "identified" ? "nitro-btn-primary" : "nitro-btn-secondary"}
-                onClick={() => setVisitorFilter("identified")}
+                onClick={() => startTransition(() => setVisitorFilter("identified"))}
               >
                 Identified Leads
               </button>
