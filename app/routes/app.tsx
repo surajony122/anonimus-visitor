@@ -26,6 +26,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 import polarisTranslations from "@shopify/polaris/locales/en.json";
+import { SkeletonTable, SkeletonKpiCards } from "../components/SkeletonLoader";
 
 export default function App() {
   const { apiKey } = useLoaderData<typeof loader>();
@@ -46,7 +47,14 @@ export default function App() {
         <Link to="/app/simulator">Interactive Simulator</Link>
       </NavMenu>
       <div key={navigation.location?.pathname || "nitro-page"} className="nitro-page-container">
-        <Outlet />
+        {isNavigating ? (
+          <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+            <SkeletonKpiCards count={4} />
+            <SkeletonTable rows={8} columns={7} />
+          </div>
+        ) : (
+          <Outlet />
+        )}
       </div>
     </AppProvider>
   );
