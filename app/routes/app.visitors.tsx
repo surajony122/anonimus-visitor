@@ -332,7 +332,7 @@ export default function VisitorsList() {
       subtitle={`Displaying ${filtered.length} active shoppers tracked across the store`}
       secondaryActions={[
         {
-          content: autoRefresh ? "🟢 Auto-Refresh (5s)" : "⏸️ Auto-Refresh: Off",
+          content: autoRefresh ? "🟢 Auto-Refresh (15s)" : "⏸️ Auto-Refresh: Off",
           onAction: () => setAutoRefresh(!autoRefresh),
         },
         {

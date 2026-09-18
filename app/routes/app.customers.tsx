@@ -147,7 +147,7 @@ export default function CustomersRoute() {
       }}
       secondaryActions={[
         {
-          content: autoRefresh ? "🟢 Live Auto-Refresh (5s)" : "⏸️ Auto-Refresh: Off",
+          content: autoRefresh ? "🟢 Live Auto-Refresh (15s)" : "⏸️ Auto-Refresh: Off",
           onAction: () => setAutoRefresh(!autoRefresh),
         },
       ]}

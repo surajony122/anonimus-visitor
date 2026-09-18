@@ -266,8 +266,9 @@ export default function FunnelAnalyticsRoute() {
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       revalidator.revalidate();
-    }, 5000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [autoRefresh, revalidator]);
 
@@ -705,7 +706,7 @@ export default function FunnelAnalyticsRoute() {
                 background: autoRefresh ? "#10b981" : "#94a3b8",
                 boxShadow: autoRefresh ? "0 0 6px #10b981" : "none",
               }} />
-              {autoRefresh ? "Live Auto-Refresh (5s)" : "Auto-Refresh (Off)"}
+              {autoRefresh ? "Live Auto-Refresh (15s)" : "Auto-Refresh (Off)"}
             </button>
 
             <div style={{ width: "135px" }}>

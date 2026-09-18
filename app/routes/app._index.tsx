@@ -716,7 +716,7 @@ export default function AppDashboard() {
                 boxShadow: autoRefresh ? "0 0 8px #0F8A5F" : "none",
                 animation: autoRefresh ? "pulse 1.8s infinite" : "none",
               }} />
-              {autoRefresh ? "Live Auto-Refresh (5s)" : "Auto-Refresh: Off"}
+              {autoRefresh ? "Live Auto-Refresh (15s)" : "Auto-Refresh: Off"}
             </button>
 
             <button
