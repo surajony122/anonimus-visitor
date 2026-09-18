@@ -258,8 +258,128 @@ export default function FunnelAnalyticsRoute() {
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
 
+
+  // Send query to AI Copilot
+  const handleSendCopilotQuery = async (queryToSend?: string) => {
+    const query = (queryToSend || copilotInput).trim();
+    if (!query || isCopilotLoading) return;
+
+    setCopilotInput("");
+    const userMsg = {
+      role: "user" as const,
+      content: query,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setCopilotHistory((prev) => [...prev, userMsg]);
+    setIsCopilotLoading(true);
+
+    try {
+      const storeContext = {
+        shopDomain,
+        timeRange: timeFilter,
+        totalVisitors: funnelMetrics.landings,
+        totalSessions: sessions.length,
+        totalEvents: filteredEvents.length,
+        funnel: {
+          visitors: funnelMetrics.landings,
+          pdpViews: funnelMetrics.productViews,
+          cartAdds: funnelMetrics.cartAdds,
+          checkouts: funnelMetrics.checkouts,
+          purchases: funnelMetrics.orders,
+          pdpRate: funnelMetrics.pdpRate,
+          cartRate: funnelMetrics.cartRate,
+          checkoutRate: funnelMetrics.checkoutRate,
+          purchaseRate: funnelMetrics.orderRate,
+        },
+        metrics: {
+          ordersCount: funnelMetrics.orders,
+          totalRevenue: shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0),
+          aov: funnelMetrics.orders > 0 ? (shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0) / funnelMetrics.orders) : 0,
+          totalDiscountsGiven: offerAnalytics.reduce((acc, o) => acc + o.discountAmount, 0),
+        },
+        topCollections: collectionAnalytics.slice(0, 5).map(c => ({ title: c.name, views: c.views, addToCarts: c.carts, revenue: parseFloat(c.revenue.replace(/[^0-9.]/g, '')) || 0 })),
+        topLeakingProducts: productAnalytics.filter(p => p.status === 'leaking').slice(0, 5).map(p => ({ title: p.title, views: p.views, addToCarts: p.cartAdds, purchases: 0, dropRate: `${100 - p.cartRate}%` })),
+        winningProducts: productAnalytics.filter(p => p.status === 'trending' || p.status === 'high_ticket').slice(0, 5).map(p => ({ title: p.title, views: p.views, purchases: p.cartAdds, convRate: `${p.cartRate}%` })),
+        devices: deviceAnalytics.map(d => ({ device: d.device, visitors: d.visitors, share: d.checkoutRate })),
+        offers: offerAnalytics.map(o => ({ code: o.code, orders: o.ordersCount, revenue: o.capturedRevenue, discount: o.discountAmount }))
+      };
+
+      const res = await fetch("/api/ai-copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: query,
+          context: storeContext,
+          history: copilotHistory.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          apiKey: geminiApiKey || undefined
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.reply) {
+        setCopilotHistory((prev) => [
+          ...prev,
+          {
+            role: "model",
+            content: data.reply,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            source: data.source,
+            modelUsed: data.modelUsed
+          }
+        ]);
+      } else {
+        setCopilotHistory((prev) => [
+          ...prev,
+          {
+            role: "model",
+            content: "⚠️ I encountered an issue analyzing the store data. Please try again.",
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            source: "autonomous"
+          }
+        ]);
+      }
+    } catch (err: any) {
+      setCopilotHistory((prev) => [
+        ...prev,
+        {
+          role: "model",
+          content: `⚠️ Connection error: ${err.message || "Failed to reach AI service"}. Please check your network or try again.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          source: "autonomous"
+        }
+      ]);
+    } finally {
+      setIsCopilotLoading(false);
+    }
+  };
+
   // Navigation & View Filters
-  const [activeTab, setActiveTab] = useState<"funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("campaigns");
+  const [activeTab, setActiveTab] = useState<"copilot" | "funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("copilot");
+  
+  // AI Copilot State
+  const [copilotHistory, setCopilotHistory] = useState<Array<{ role: "user" | "model"; content: string; time: string; source?: string; modelUsed?: string }>>([
+    {
+      role: "model",
+      content: `### 🤖 Welcome to Nitro AI Merchant Copilot!
+I am your autonomous growth strategist powered by **Gemini 3.6 Flash**. I have real-time access to your live tracking data, conversion funnel, product catalog, promo codes, and Meta ad attribution.
+
+**Quick snapshot of your store right now:**
+- 👥 **Total Tracked Traffic:** **${shopifyProducts.length > 0 ? "Live Connected" : "Connecting..."}**
+- 🛒 **Store Currency:** **${currency}**
+- 🛍️ **Catalog Analyzed:** **${shopifyProducts.length}** active products & **${shopifyCollections ? shopifyCollections.length : 0}** collections
+
+*Click any prompt below or ask me any question about today's trends, drop-offs, or revenue strategies!*`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      source: "gemini",
+      modelUsed: "gemini-3.6-flash"
+    }
+  ]);
+  const [copilotInput, setCopilotInput] = useState("");
+  const [isCopilotLoading, setIsCopilotLoading] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
   const [timeFilter, setTimeFilter] = useState("7d");
   const [searchQuery, setSearchQuery] = useState("");
   const [productTierFilter, setProductTierFilter] = useState("all");
@@ -1126,6 +1246,35 @@ export default function FunnelAnalyticsRoute() {
             borderRadius: "8px",
             border: "1px solid #e2e8f0",
           }}>
+                        <button
+              onClick={() => setActiveTab("copilot")}
+              style={{
+                padding: "6px 14px",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "copilot" ? "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)" : "transparent",
+                color: activeTab === "copilot" ? "#ffffff" : "#4f46e5",
+                fontWeight: activeTab === "copilot" ? 700 : 600,
+                fontSize: "12.5px",
+                cursor: "pointer",
+                boxShadow: activeTab === "copilot" ? "0 2px 8px rgba(79, 70, 229, 0.35)" : "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span style={{ fontSize: "14px" }}>🤖</span>
+              <span>AI Copilot</span>
+              <span style={{
+                background: activeTab === "copilot" ? "rgba(255,255,255,0.25)" : "#e0e7ff",
+                color: activeTab === "copilot" ? "#ffffff" : "#4338ca",
+                padding: "1px 6px",
+                borderRadius: "10px",
+                fontSize: "10px",
+                fontWeight: 700
+              }}>GEMINI 3.6</span>
+            </button>
             <button
               onClick={() => setActiveTab("funnel")}
               style={{

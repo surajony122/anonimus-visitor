@@ -736,6 +736,26 @@ export default function AppDashboard() {
               {isRefreshing ? "Refreshing..." : "Refresh Data"}
             </button>
 
+            <button
+              onClick={() => navigate("/app/funnel")}
+              style={{
+                background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                padding: "7px 13px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 6px rgba(79, 70, 229, 0.25)"
+              }}
+            >
+              <span>🤖</span>
+              <span>AI Copilot</span>
+            </button>
             <button className="nitro-btn-secondary" onClick={handleExportCSV} disabled={visitorsData.length === 0}>
               Export CSV
             </button>
