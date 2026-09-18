@@ -15,64 +15,198 @@ import {
 } from "@shopify/polaris";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
+import { decryptValue } from "../services/normalizer.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  let shopDomain = "ravistore-shop.myshopify.com";
+  let shopDomain = "theunniyarcha.myshopify.com";
+  let shopifyCustomersList: any[] = [];
+  let dbCustomers: any[] = [];
+  let identifiedVisitors: any[] = [];
+
   try {
-    const { session } = await authenticate.admin(request);
-    shopDomain = session.shop;
+    const { admin, session } = await authenticate.admin(request);
+    if (session?.shop) shopDomain = session.shop;
+
+    // 1. Fetch real store customers from Shopify GraphQL API
+    try {
+      const response = await admin.graphql(`
+        query GetStoreCustomers {
+          customers(first: 50, reverse: true) {
+            edges {
+              node {
+                id
+                displayName
+                firstName
+                lastName
+                email
+                phone
+                numberOfOrders
+                amountSpent {
+                  amount
+                  currencyCode
+                }
+                createdAt
+              }
+            }
+          }
+        }
+      `);
+      const resJson = await response.json();
+      if (resJson?.data?.customers?.edges) {
+        shopifyCustomersList = resJson.data.customers.edges.map((e: any) => e.node);
+      }
+    } catch (graphErr) {
+      console.warn("Shopify GraphQL Customers non-blocking warning:", graphErr);
+    }
   } catch (err) {
     if (err instanceof Response) throw err;
+    console.warn("Admin auth non-blocking in customers loader:", err);
   }
 
-  let customers: any[] = [];
+  // 2. Fetch DB customer links and identified visitors
   try {
-    customers = await prisma.shopifyCustomer.findMany({
+    dbCustomers = await prisma.shopifyCustomer.findMany({
       include: {
         visitorLinks: {
           include: {
             visitor: {
-              include: { events: true },
+              include: { events: true, identities: true },
             },
           },
         },
       },
       orderBy: { updatedAt: "desc" },
-      take: 1000,
+      take: 500,
+    });
+
+    identifiedVisitors = await prisma.visitor.findMany({
+      where: {
+        OR: [
+          { status: "identified" },
+          { identities: { some: {} } },
+          { customerLinks: { some: {} } },
+        ],
+      },
+      include: {
+        identities: true,
+        customerLinks: { include: { customer: true } },
+        events: { orderBy: { timestamp: "desc" }, take: 20 },
+      },
+      take: 500,
     });
   } catch (dbErr) {
     console.warn("Customers DB query fallback:", dbErr);
   }
 
+  // Build lookup maps for fast matching
+  const visitorByEmail = new Map<string, any>();
+  const visitorByPhone = new Map<string, any>();
+  const visitorByCustomerId = new Map<string, any>();
+
+  identifiedVisitors.forEach((v) => {
+    (v.identities || []).forEach((i: any) => {
+      let val = "";
+      const enc = i.identityValueEncrypted || i.encryptedValue;
+      if (enc) {
+        try { val = decryptValue(enc); } catch {}
+      }
+      if (val) {
+        if (i.identityType === "email") visitorByEmail.set(val.toLowerCase().trim(), v);
+        if (i.identityType === "phone") visitorByPhone.set(val.trim(), v);
+      }
+    });
+
+    (v.customerLinks || []).forEach((cl: any) => {
+      if (cl.customer?.shopifyCustomerId) {
+        visitorByCustomerId.set(cl.customer.shopifyCustomerId, v);
+      }
+    });
+  });
+
+  dbCustomers.forEach((c) => {
+    const linkedVis = c.visitorLinks?.[0]?.visitor;
+    if (linkedVis && c.shopifyCustomerId) {
+      visitorByCustomerId.set(c.shopifyCustomerId, linkedVis);
+      if (c.emailReference) visitorByEmail.set(c.emailReference.toLowerCase().trim(), linkedVis);
+      if (c.phoneReference) visitorByPhone.set(c.phoneReference.trim(), linkedVis);
+    }
+  });
+
+  // Merge Shopify GraphQL Customers with DB data
+  const mergedCustomers: any[] = [];
+
+  shopifyCustomersList.forEach((sc: any) => {
+    const email = (sc.email || "").toLowerCase().trim();
+    const phone = (sc.phone || "").trim();
+
+    // Match with visitor
+    const matchedVisitor = visitorByCustomerId.get(sc.id) ||
+      (email ? visitorByEmail.get(email) : null) ||
+      (phone ? visitorByPhone.get(phone) : null);
+
+    const ordersCount = Number(sc.numberOfOrders || 0);
+    const totalSpent = parseFloat(sc.amountSpent?.amount || "0");
+    const currency = sc.amountSpent?.currencyCode || "INR";
+
+    mergedCustomers.push({
+      id: sc.id,
+      shopifyCustomerId: sc.id.replace("gid://shopify/Customer/", ""),
+      firstName: sc.firstName || sc.displayName || "Customer",
+      lastName: sc.lastName || "",
+      emailReference: sc.email || "—",
+      phoneReference: sc.phone || "—",
+      ordersCount,
+      totalSpent: (currency === "INR" ? "₹" : "$") + totalSpent.toLocaleString(),
+      linkedVisitorId: matchedVisitor?.visitorId || matchedVisitor?.id || null,
+      matchMethod: matchedVisitor ? (email ? "email_match" : "checkout_identity") : null,
+    });
+  });
+
+  // Also include any identified storefront visitors who entered an email
+  identifiedVisitors.forEach((v) => {
+    let email = "";
+    let phone = "";
+    (v.identities || []).forEach((i: any) => {
+      let val = "";
+      const enc = i.identityValueEncrypted || i.encryptedValue;
+      if (enc) {
+        try { val = decryptValue(enc); } catch {}
+      }
+      if (val) {
+        if (i.identityType === "email") email = val;
+        if (i.identityType === "phone") phone = val;
+      }
+    });
+
+    if (email && !mergedCustomers.some((c) => c.emailReference.toLowerCase() === email.toLowerCase())) {
+      mergedCustomers.push({
+        id: v.id,
+        shopifyCustomerId: "Storefront Lead",
+        firstName: "Storefront Visitor",
+        lastName: "",
+        emailReference: email,
+        phoneReference: phone || "—",
+        ordersCount: v.events.filter((e: any) => e.eventType === "checkout_completed").length,
+        totalSpent: "₹0",
+        linkedVisitorId: v.visitorId || v.id,
+        matchMethod: "form_submission",
+      });
+    }
+  });
+
   return json({
-    customers: customers.map((c) => ({
-      id: c.id,
-      shopifyCustomerId: c.shopifyCustomerId,
-      firstName: c.firstName,
-      lastName: c.lastName,
-      emailReference: c.emailReference,
-      phoneReference: c.phoneReference,
-      ordersCount: c.ordersCount,
-      totalSpent: c.totalSpent,
-      visitorLinks: c.visitorLinks.map((l) => ({
-        id: l.id,
-        matchMethod: l.matchMethod,
-        confidenceScore: l.confidenceScore,
-        visitor: {
-          visitorId: l.visitor.visitorId,
-        },
-      })),
-    })),
+    customers: mergedCustomers,
+    shopDomain,
   });
 };
 
 export default function CustomersRoute() {
-  const { customers } = useLoaderData<typeof loader>();
+  const { customers = [] } = (useLoaderData<typeof loader>() || {}) as any;
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("just now");
+  const [lastRefreshedAt, setLastRefreshedAt] = useState("just now");
 
   const handleManualRefresh = () => {
     revalidator.revalidate();
@@ -82,39 +216,39 @@ export default function CustomersRoute() {
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       revalidator.revalidate();
       setLastRefreshedAt(new Date().toLocaleTimeString());
-    }, 5000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [autoRefresh, revalidator]);
 
   const rows = (customers || []).map((c: any) => {
-    const linkedVisitor = c.visitorLinks?.[0]?.visitor;
-    const matchMethod = c.visitorLinks?.[0]?.matchMethod || "manual";
+    const hasLink = Boolean(c.linkedVisitorId);
 
     return [
-      <BlockStack key={`cust_${c.id}`} gap="100">
+      <BlockStack key={"cust_" + c.id} gap="100">
         <Text variant="bodyMd" fontWeight="bold" as="span">
-          {`${c.firstName || ""} ${c.lastName || ""}`}
+          {(c.firstName + " " + (c.lastName || "")).trim() || "Customer"}
         </Text>
         <Text variant="bodySm" tone="subdued" as="span">
-          {`ID: ${c.shopifyCustomerId}`}
+          {"ID: " + c.shopifyCustomerId}
         </Text>
       </BlockStack>,
       c.emailReference || "—",
       c.phoneReference || "—",
-      `${c.ordersCount} orders ($${c.totalSpent})`,
-      linkedVisitor ? (
+      c.ordersCount + " orders (" + c.totalSpent + ")",
+      hasLink ? (
         <InlineStack gap="100" align="center">
-          <Badge tone="success">{`Linked to #${(linkedVisitor.visitorId || "visitor").substring(0, 8)}`}</Badge>
-          <Text variant="bodySm" tone="subdued" as="span">{`(${matchMethod})`}</Text>
+          <Badge tone="success">{"Linked to #" + String(c.linkedVisitorId).substring(0, 8)}</Badge>
+          <Text variant="bodySm" tone="subdued" as="span">{"(" + (c.matchMethod || "verified") + ")"}</Text>
         </InlineStack>
       ) : (
         <Badge tone="warning">No Storefront Activity Linked</Badge>
       ),
-      linkedVisitor ? (
+      hasLink ? (
         <Link
-          to={`/app/visitors/${linkedVisitor.visitorId || linkedVisitor.id}`}
+          to={"/app/visitors/" + c.linkedVisitorId}
           style={{
             display: "inline-block",
             padding: "6px 12px",
@@ -168,7 +302,7 @@ export default function CustomersRoute() {
           ) : (
             <DataTable
               columnContentTypes={["text", "text", "text", "text", "text", "text"]}
-              headings={["Customer", "Email", "Phone", "Orders & Spent", "Visitor Graph Link", "Action"]}
+              headings={["Customer", "Email", "Phone", "Orders & Lifetime Spent", "Visitor Graph Link", "Action"]}
               rows={rows as any}
             />
           )}
@@ -177,7 +311,6 @@ export default function CustomersRoute() {
     </Page>
   );
 }
-
 
 export function ErrorBoundary() {
   const error = useRouteError() as any;
@@ -188,7 +321,7 @@ export function ErrorBoundary() {
       <div style={{ padding: "30px", maxWidth: "800px", margin: "0 auto" }}>
         <div style={{ background: "#fff4f4", border: "1px solid #fecaca", borderRadius: "10px", padding: "24px" }}>
           <h2 style={{ color: "#b91c1c", margin: "0 0 10px 0", fontSize: "18px", fontWeight: 700 }}>
-            ⚠️ Customers Intelligence Loading Notice
+            ⚠️ Customer Intelligence Loading Notice
           </h2>
           <p style={{ color: "#374151", margin: "0 0 15px 0", fontSize: "13px" }}>
             <strong>Details:</strong> {error?.message || error?.statusText || "Unexpected rendering error"}
