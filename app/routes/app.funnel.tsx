@@ -332,7 +332,7 @@ export default function FunnelAnalyticsRoute() {
   const isRefreshing = revalidator.state === "loading";
 
   // Navigation & View Filters
-  const [activeTab, setActiveTab] = useState<"copilot" | "funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("copilot");
+  const [activeTab, setActiveTab] = useState<"funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("funnel");
   const [timeFilter, setTimeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [productTierFilter, setProductTierFilter] = useState("all");
@@ -344,27 +344,6 @@ export default function FunnelAnalyticsRoute() {
   const [metaAccessToken, setMetaAccessToken] = useState(metaSettings?.accessToken || "");
   const [metaPixelId, setMetaPixelId] = useState(metaSettings?.pixelId || "");
   const [metaAdAccountId, setMetaAdAccountId] = useState(metaSettings?.adAccountId || "");
-
-  // AI Copilot State
-  const [copilotHistory, setCopilotHistory] = useState<Array<{ role: "user" | "model"; content: string; time: string; source?: string; modelUsed?: string }>>([
-    {
-      role: "model",
-      content: `### 🤖 Welcome to Nitro AI Merchant Copilot!
-I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. I have direct access to your real Shopify product catalog, conversion funnel, cart drop-offs, and customer sessions.
-
-**Live Store Status:**
-- 🛍️ **Shopify Catalog:** **${shopifyProducts.length}** synced products & **${shopifyCollections.length}** collections
-- 👥 **Tracked Traffic:** **${events.length}** live storefront events recorded
-- 💰 **Currency:** **${currency}**
-
-*Click any prompt below or ask me about conversion bottlenecks, product leakages, or revenue strategies!*`,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      source: "gemini",
-      modelUsed: "gemini-3.5-flash"
-    }
-  ]);
-  const [copilotInput, setCopilotInput] = useState("");
-  const [isCopilotLoading, setIsCopilotLoading] = useState(false);
 
   const handleSaveMeta = () => {
     const fd = new FormData();
@@ -1124,137 +1103,7 @@ I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. 
     });
   }, [sessions, filteredEvents]);
 
-  // Send query to AI Copilot
-  const handleSendCopilotQuery = async (queryToSend?: string) => {
-    const query = (queryToSend || copilotInput).trim();
-    if (!query || isCopilotLoading) return;
 
-    setCopilotInput("");
-    const userMsg = {
-      role: "user" as const,
-      content: query,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setCopilotHistory((prev) => [...prev, userMsg]);
-    setIsCopilotLoading(true);
-
-    try {
-      const totalRev = shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0);
-      const totalDisc = offerAnalytics.reduce((acc, o) => acc + (o.discountAmount || 0), 0);
-
-      const storeContext = {
-        shopDomain,
-        currency,
-        timeRange: timeFilter,
-        totalVisitors: funnelMetrics.landings,
-        totalSessions: sessions.length,
-        totalEvents: filteredEvents.length,
-        funnel: {
-          visitors: funnelMetrics.landings,
-          pdpViews: funnelMetrics.productViews,
-          cartAdds: funnelMetrics.cartAdds,
-          checkouts: funnelMetrics.checkouts,
-          purchases: funnelMetrics.orders,
-          pdpRate: funnelMetrics.pdpRate,
-          cartRate: funnelMetrics.cartRate,
-          checkoutRate: funnelMetrics.checkoutRate,
-          purchaseRate: funnelMetrics.orderRate,
-        },
-        metrics: {
-          ordersCount: funnelMetrics.orders,
-          totalRevenue: totalRev,
-          aov: funnelMetrics.orders > 0 ? (totalRev / funnelMetrics.orders) : 0,
-          totalDiscountsGiven: totalDisc,
-        },
-        topProducts: productAnalytics.slice(0, 15).map(p => ({
-          title: p.title,
-          price: p.price,
-          views: p.views,
-          cartAdds: p.cartAdds,
-          orders: p.orders,
-          cartRate: `${p.cartRate}%`
-        })),
-        topCollections: collectionAnalytics.slice(0, 5).map(c => ({
-          title: c.name,
-          views: c.views,
-          addToCarts: c.carts,
-          revenue: parseFloat(c.revenue.replace(/[^0-9.]/g, '')) || 0
-        })),
-        topLeakingProducts: productAnalytics.filter(p => p.status === 'leaking').slice(0, 5).map(p => ({
-          title: p.title,
-          views: p.views,
-          addToCarts: p.cartAdds,
-          purchases: p.orders,
-          dropRate: `${100 - p.cartRate}%`
-        })),
-        winningProducts: productAnalytics.filter(p => p.status === 'trending' || p.orders > 0).slice(0, 5).map(p => ({
-          title: p.title,
-          views: p.views,
-          purchases: p.orders,
-          convRate: `${p.cartRate}%`
-        })),
-        devices: deviceAnalytics.map(d => ({
-          device: `${d.device} (${d.os})`,
-          visitors: d.visitors,
-          share: d.checkoutRate
-        })),
-        offers: offerAnalytics.map(o => ({
-          code: o.code,
-          orders: o.orders,
-          revenue: o.revenueAmount,
-          discount: o.discountAmount
-        }))
-      };
-
-      const res = await fetch("/api/ai-copilot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: query,
-          context: storeContext,
-          history: copilotHistory.slice(-6).map(m => ({ role: m.role, content: m.content })),
-        })
-      });
-
-      const data = await res.json();
-
-      if (data.reply) {
-        setCopilotHistory((prev) => [
-          ...prev,
-          {
-            role: "model",
-            content: data.reply,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            source: data.source,
-            modelUsed: data.modelUsed
-          }
-        ]);
-      } else {
-        setCopilotHistory((prev) => [
-          ...prev,
-          {
-            role: "model",
-            content: "⚠️ I encountered an issue analyzing the store data. Please try again.",
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            source: "autonomous"
-          }
-        ]);
-      }
-    } catch (err: any) {
-      setCopilotHistory((prev) => [
-        ...prev,
-        {
-          role: "model",
-          content: `⚠️ Communication error: ${err.message || "Failed to reach AI Copilot"}`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          source: "autonomous"
-        }
-      ]);
-    } finally {
-      setIsCopilotLoading(false);
-    }
-  };
 
   return (
     <Page fullWidth>
@@ -1276,14 +1125,14 @@ I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. 
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <h1 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#0f172a" }}>
-                Conversion Funnel & Growth Copilot
+                Conversion Funnel & Deep Commerce Analytics
               </h1>
               <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "12px", background: "#e0e7ff", color: "#3730a3" }}>
                 {shopName}
               </span>
             </div>
             <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748b" }}>
-              Deep-funnel shopper behavior, real-time product intelligence, and AI-powered merchant strategy.
+              Deep-funnel shopper behavior, real-time product intelligence, and checkout drop-off diagnosis.
             </p>
           </div>
 
@@ -1406,34 +1255,6 @@ I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. 
             borderRadius: "8px",
             border: "1px solid #e2e8f0",
           }}>
-            <button
-              onClick={() => setActiveTab("copilot")}
-              style={{
-                padding: "6px 14px",
-                borderRadius: "6px",
-                border: "none",
-                background: activeTab === "copilot" ? "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)" : "transparent",
-                color: activeTab === "copilot" ? "#ffffff" : "#4f46e5",
-                fontWeight: activeTab === "copilot" ? 700 : 600,
-                fontSize: "12.5px",
-                cursor: "pointer",
-                boxShadow: activeTab === "copilot" ? "0 2px 8px rgba(79, 70, 229, 0.35)" : "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              <span>🤖</span>
-              <span>AI Copilot</span>
-              <span style={{
-                background: activeTab === "copilot" ? "rgba(255,255,255,0.25)" : "#e0e7ff",
-                color: activeTab === "copilot" ? "#ffffff" : "#4338ca",
-                padding: "1px 6px",
-                borderRadius: "10px",
-                fontSize: "10px",
-                fontWeight: 700
-              }}>GEMINI 3.5</span>
-            </button>
 
             <button
               onClick={() => setActiveTab("funnel")}
@@ -1558,253 +1379,6 @@ I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. 
           </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* TAB 0: AI COPILOT INTERACTIVE ASSISTANT                                   */}
-        {/* ========================================================================= */}
-        {activeTab === "copilot" && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(300px, 1fr)", gap: "16px", alignItems: "start" }}>
-            
-            {/* Left: Chat Window */}
-            <div style={{
-              background: "#ffffff",
-              borderRadius: "12px",
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-              display: "flex",
-              flexDirection: "column",
-              minHeight: "580px",
-            }}>
-              {/* Copilot Header */}
-              <div style={{
-                padding: "14px 20px",
-                borderBottom: "1px solid #e2e8f0",
-                background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-                borderRadius: "12px 12px 0 0",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <div style={{
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "8px",
-                    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#ffffff",
-                    fontSize: "16px",
-                  }}>
-                    🤖
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: "14px", color: "#0f172a" }}>
-                      Nitro AI Copilot
-                    </div>
-                    <div style={{ fontSize: "11px", color: "#64748b" }}>
-                      Real-time analysis powered by Gemini 3.5 Flash
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <Badge tone="success">⚡ Live Connected</Badge>
-                </div>
-              </div>
-
-              {/* Messages Scroll Area */}
-              <div style={{
-                padding: "20px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px",
-                flex: 1,
-                maxHeight: "520px",
-                overflowY: "auto",
-                background: "#fafaf9",
-              }}>
-                {copilotHistory.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: msg.role === "user" ? "flex-end" : "flex-start",
-                    }}
-                  >
-                    <div style={{
-                      maxWidth: msg.role === "user" ? "75%" : "90%",
-                      padding: "14px 18px",
-                      borderRadius: msg.role === "user" ? "14px 14px 2px 14px" : "14px 14px 14px 2px",
-                      background: msg.role === "user" ? "linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)" : "#ffffff",
-                      color: msg.role === "user" ? "#ffffff" : "#1e293b",
-                      border: msg.role === "user" ? "none" : "1px solid #e2e8f0",
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-                      fontSize: "13px",
-                      lineHeight: "1.6",
-                      whiteSpace: "pre-wrap",
-                    }}>
-                      {msg.content}
-                    </div>
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      marginTop: "4px",
-                      fontSize: "10.5px",
-                      color: "#94a3b8",
-                      padding: "0 4px",
-                    }}>
-                      <span>{msg.time}</span>
-                      {msg.modelUsed && (
-                        <span>• {msg.modelUsed}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {isCopilotLoading && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#6366f1", fontSize: "12px", padding: "10px" }}>
-                    <span>⏳ Analyzing live store catalog and shopper metrics...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Preset Fast Prompt Buttons */}
-              <div style={{
-                padding: "10px 16px",
-                background: "#ffffff",
-                borderTop: "1px solid #f1f5f9",
-                display: "flex",
-                gap: "8px",
-                flexWrap: "wrap",
-              }}>
-                {[
-                  "📊 Summarize today's funnel & drop-offs",
-                  "🔥 Which products are trending vs leaking?",
-                  "📿 Analyze collection views & cart adds",
-                  "💡 Give 3 high-ROI recommendations",
-                ].map((pText, pIdx) => (
-                  <button
-                    key={pIdx}
-                    onClick={() => handleSendCopilotQuery(pText)}
-                    disabled={isCopilotLoading}
-                    style={{
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "16px",
-                      padding: "5px 12px",
-                      fontSize: "11.5px",
-                      color: "#475569",
-                      cursor: "pointer",
-                      fontWeight: 500,
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    {pText}
-                  </button>
-                ))}
-              </div>
-
-              {/* Input Form */}
-              <div style={{
-                padding: "14px 16px",
-                background: "#ffffff",
-                borderTop: "1px solid #e2e8f0",
-                borderRadius: "0 0 12px 12px",
-                display: "flex",
-                gap: "10px",
-              }}>
-                <input
-                  type="text"
-                  placeholder="Ask anything about your shoppers, conversion leaks, catalog, or campaigns..."
-                  value={copilotInput}
-                  onChange={(e) => setCopilotInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendCopilotQuery();
-                    }
-                  }}
-                  disabled={isCopilotLoading}
-                  style={{
-                    flex: 1,
-                    padding: "10px 14px",
-                    borderRadius: "8px",
-                    border: "1px solid #cbd5e1",
-                    fontSize: "13px",
-                    outline: "none",
-                  }}
-                />
-                <button
-                  onClick={() => handleSendCopilotQuery()}
-                  disabled={isCopilotLoading || !copilotInput.trim()}
-                  style={{
-                    background: copilotInput.trim() ? "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)" : "#cbd5e1",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "0 20px",
-                    fontWeight: 600,
-                    fontSize: "13px",
-                    cursor: copilotInput.trim() ? "pointer" : "default",
-                  }}
-                >
-                  Ask AI
-                </button>
-              </div>
-            </div>
-
-            {/* Right: Live Context Summary */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "16px" }}>
-                <div style={{ fontWeight: 700, fontSize: "13px", color: "#0f172a", marginBottom: "12px" }}>
-                  📊 Store Snapshot Given to Copilot
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                    <span style={{ color: "#64748b" }}>Shop Domain</span>
-                    <strong style={{ color: "#0f172a" }}>{shopDomain}</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                    <span style={{ color: "#64748b" }}>Tracked Shoppers</span>
-                    <strong style={{ color: "#4f46e5" }}>{funnelMetrics.landings}</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                    <span style={{ color: "#64748b" }}>PDP Views</span>
-                    <strong style={{ color: "#0f172a" }}>{funnelMetrics.productViews} ({funnelMetrics.pdpRate})</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                    <span style={{ color: "#64748b" }}>Cart Adds</span>
-                    <strong style={{ color: "#059669" }}>{funnelMetrics.cartAdds} ({funnelMetrics.cartRate})</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                    <span style={{ color: "#64748b" }}>Paid Orders</span>
-                    <strong style={{ color: "#10b981" }}>{funnelMetrics.orders}</strong>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "#64748b" }}>Synced Catalog</span>
-                    <strong style={{ color: "#0f172a" }}>{shopifyProducts.length} items</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", padding: "16px" }}>
-                <div style={{ fontWeight: 600, fontSize: "12.5px", color: "#0f172a", marginBottom: "8px" }}>
-                  💡 What can you ask Copilot?
-                </div>
-                <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "11.5px", color: "#475569", lineHeight: "1.7" }}>
-                  <li>"Which products have high views but zero cart additions?"</li>
-                  <li>"What is my biggest funnel leak between cart and checkout?"</li>
-                  <li>"Recommend bundling or pricing tweaks to increase average order value."</li>
-                  <li>"How are mobile shoppers converting compared to desktop?"</li>
-                </ul>
-              </div>
-            </div>
-
-          </div>
-        )}
 
         {/* ========================================================================= */}
         {/* TAB 1: CONVERSION FUNNEL VISUALIZATION                                    */}

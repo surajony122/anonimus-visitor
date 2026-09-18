@@ -728,8 +728,8 @@ export default function AppDashboard() {
                 boxShadow: "0 2px 6px rgba(79, 70, 229, 0.25)"
               }}
             >
-              <span>🤖</span>
-              <span>AI Copilot</span>
+              <span>📊</span>
+              <span>Funnel Analytics</span>
             </button>
             <button className="nitro-btn-secondary" onClick={handleExportCSV} disabled={visitorsData.length === 0}>
               Export CSV
