@@ -23,6 +23,10 @@ import { SkeletonTable, SkeletonFunnel, SkeletonKpiCards } from "../components/S
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const isForceRefresh = url.searchParams.get("refresh") === "true";
+  const timeFilter = url.searchParams.get("timeFilter") || "today";
+  const startDate = url.searchParams.get("startDate") || "";
+  const endDate = url.searchParams.get("endDate") || "";
+
   let shopDomain = "theunniyarcha.myshopify.com";
   let shopName = "Unniyarcha Fine Jewellery";
   let currency = "INR";
@@ -30,16 +34,65 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopifyCollections: any[] = [];
   let shopifyOrders: any[] = [];
 
+  // 1. Calculate exact date window boundaries
+  const now = new Date();
+  let startBoundary: Date | null = null;
+  let endBoundary: Date | null = null;
+  let activeDateLabel = "Today";
+
+  if (timeFilter === "today") {
+    startBoundary = new Date();
+    startBoundary.setHours(0, 0, 0, 0);
+    endBoundary = new Date();
+    endBoundary.setHours(23, 59, 59, 999);
+    activeDateLabel = `Today (${now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
+  } else if (timeFilter === "yesterday") {
+    startBoundary = new Date();
+    startBoundary.setDate(startBoundary.getDate() - 1);
+    startBoundary.setHours(0, 0, 0, 0);
+    endBoundary = new Date();
+    endBoundary.setDate(endBoundary.getDate() - 1);
+    endBoundary.setHours(23, 59, 59, 999);
+    activeDateLabel = `Yesterday (${startBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
+  } else if (timeFilter === "7d") {
+    startBoundary = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    startBoundary.setHours(0, 0, 0, 0);
+    endBoundary = new Date();
+    endBoundary.setHours(23, 59, 59, 999);
+    activeDateLabel = "Last 7 Days";
+  } else if (timeFilter === "30d") {
+    startBoundary = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    startBoundary.setHours(0, 0, 0, 0);
+    endBoundary = new Date();
+    endBoundary.setHours(23, 59, 59, 999);
+    activeDateLabel = "Last 30 Days";
+  } else if (timeFilter === "custom" && startDate) {
+    try {
+      startBoundary = new Date(`${startDate}T00:00:00`);
+      endBoundary = endDate ? new Date(`${endDate}T23:59:59.999`) : new Date(`${startDate}T23:59:59.999`);
+      activeDateLabel = endDate && endDate !== startDate 
+        ? `${startBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${endBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+        : startBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      startBoundary = null;
+      endBoundary = null;
+      activeDateLabel = "Custom Date";
+    }
+  } else if (timeFilter === "all") {
+    startBoundary = null;
+    endBoundary = null;
+    activeDateLabel = "All-Time";
+  }
+
+  const cacheKey = `funnel_data_${shopDomain}_${timeFilter}_${startDate}_${endDate}`;
+
   try {
     const { admin, session } = await authenticate.admin(request);
     if (session?.shop) shopDomain = session.shop;
 
     if (!isForceRefresh) {
-      const cached = appCache.get("funnel_data_" + shopDomain);
+      const cached = appCache.get(cacheKey);
       if (cached) return json(cached);
-      if (cached) {
-        return json(cached);
-      }
     }
 
     try {
@@ -186,16 +239,62 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.warn("Admin auth non-blocking:", err);
   }
 
+  // 2. Exact SQL Date Where Clauses
+  const eventWhere: any = {};
+  const sessionWhere: any = {};
+  const visitorWhere: any = {};
+
+  if (startBoundary && endBoundary) {
+    eventWhere.timestamp = { gte: startBoundary, lte: endBoundary };
+    sessionWhere.startedAt = { gte: startBoundary, lte: endBoundary };
+    visitorWhere.lastSeenAt = { gte: startBoundary, lte: endBoundary };
+  } else if (startBoundary) {
+    eventWhere.timestamp = { gte: startBoundary };
+    sessionWhere.startedAt = { gte: startBoundary };
+    visitorWhere.lastSeenAt = { gte: startBoundary };
+  }
+
   // Query events, sessions, and visitors from Prisma
   let events: any[] = [];
   let sessions: any[] = [];
   let shopRecord: any = null;
+  let serverFunnelCounts = {
+    totalSessions: 0,
+    totalVisitors: 0,
+    totalEvents: 0,
+    productViews: 0,
+    cartAdds: 0,
+    cartViews: 0,
+    checkouts: 0,
+    orders: 0,
+  };
 
   try {
-    const [shop, evts, sess] = await Promise.all([
+    const [
+      shop,
+      totalSessionsCount,
+      totalVisitorsCount,
+      totalEventsCount,
+      productViewsCount,
+      cartAddsCount,
+      cartViewsCount,
+      checkoutsCount,
+      ordersCount,
+      evts,
+      sess,
+    ] = await Promise.all([
       prisma.shop.findUnique({ where: { shopDomain } }).catch(() => null),
+      prisma.storefrontSession.count({ where: sessionWhere }).catch(() => 0),
+      prisma.visitor.count({ where: visitorWhere }).catch(() => 0),
+      prisma.event.count({ where: eventWhere }).catch(() => 0),
+      prisma.event.count({ where: { ...eventWhere, eventType: "product_viewed" } }).catch(() => 0),
+      prisma.event.count({ where: { ...eventWhere, eventType: "product_added_to_cart" } }).catch(() => 0),
+      prisma.event.count({ where: { ...eventWhere, eventType: "cart_viewed" } }).catch(() => 0),
+      prisma.event.count({ where: { ...eventWhere, eventType: { in: ["checkout_started", "checkout_completed"] } } }).catch(() => 0),
+      prisma.event.count({ where: { ...eventWhere, eventType: "checkout_completed" } }).catch(() => 0),
       prisma.event.findMany({
-        take: 1500,
+        where: eventWhere,
+        take: 2000,
         select: {
           id: true,
           shopId: true,
@@ -213,13 +312,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         orderBy: { timestamp: "desc" },
       }).catch(() => []),
       prisma.storefrontSession.findMany({
-        take: 600,
+        where: sessionWhere,
+        take: 1000,
         orderBy: { startedAt: "desc" },
       }).catch(() => []),
     ]);
+
     shopRecord = shop;
     events = evts || [];
     sessions = sess || [];
+    serverFunnelCounts = {
+      totalSessions: totalSessionsCount,
+      totalVisitors: totalVisitorsCount,
+      totalEvents: totalEventsCount,
+      productViews: productViewsCount,
+      cartAdds: cartAddsCount,
+      cartViews: cartViewsCount,
+      checkouts: checkoutsCount,
+      orders: ordersCount,
+    };
   } catch (dbErr) {
     console.warn("Funnel DB fetch warning:", dbErr);
     events = [];
@@ -261,11 +372,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shopifyOrders,
     events,
     sessions,
+    serverFunnelCounts,
+    timeFilter,
+    startDate,
+    endDate,
+    activeDateLabel,
     metaSettings,
     liveMetaCampaigns,
     metaApiError,
   };
-  appCache.set("funnel_data_" + shopDomain, loaderPayload, 30 * 1000);
+  appCache.set(cacheKey, loaderPayload, 20 * 1000);
   return json(loaderPayload);
 };
 
@@ -422,6 +538,20 @@ export default function FunnelAnalyticsRoute() {
   const shopifyOrders = loaderData?.shopifyOrders || [];
   const events = loaderData?.events || [];
   const sessions = loaderData?.sessions || [];
+  const serverFunnelCounts = loaderData?.serverFunnelCounts || {
+    totalSessions: 0,
+    totalVisitors: 0,
+    totalEvents: 0,
+    productViews: 0,
+    cartAdds: 0,
+    cartViews: 0,
+    checkouts: 0,
+    orders: 0,
+  };
+  const timeFilter = loaderData?.timeFilter || "today";
+  const startDate = loaderData?.startDate || "";
+  const endDate = loaderData?.endDate || "";
+  const activeDateLabel = loaderData?.activeDateLabel || "Today";
   const metaSettings = loaderData?.metaSettings || {};
   const liveMetaCampaigns = loaderData?.liveMetaCampaigns || [];
   const metaApiError = loaderData?.metaApiError || null;
@@ -433,9 +563,28 @@ export default function FunnelAnalyticsRoute() {
   const isRefreshing = revalidator.state === "loading";
   const [isPending, startTransition] = React.useTransition();
 
+  // Custom Date Picker State
+  const [customStart, setCustomStart] = useState(startDate || new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(endDate || new Date().toISOString().slice(0, 10));
+  const [showCustomPicker, setShowCustomPicker] = useState(timeFilter === "custom");
+
+  const handleDateFilterSelect = (selectedFilter: string, start?: string, end?: string) => {
+    startTransition(() => {
+      const params = new URLSearchParams();
+      params.set("timeFilter", selectedFilter);
+      if (selectedFilter === "custom") {
+        if (start) params.set("startDate", start);
+        if (end) params.set("endDate", end);
+        setShowCustomPicker(true);
+      } else {
+        setShowCustomPicker(false);
+      }
+      navigate(`?${params.toString()}`);
+    });
+  };
+
   // Navigation & View Filters
   const [activeTab, setActiveTab] = useState<"funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("funnel");
-  const [timeFilter, setTimeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [productTierFilter, setProductTierFilter] = useState("all");
   const [campaignTierFilter, setCampaignTierFilter] = useState("all");
@@ -501,9 +650,14 @@ export default function FunnelAnalyticsRoute() {
       }
       if (timeFilter === "7d") return now - eTime <= 7 * 24 * 3600 * 1000;
       if (timeFilter === "30d") return now - eTime <= 30 * 24 * 3600 * 1000;
+      if (timeFilter === "custom" && startDate) {
+        const sTime = new Date(`${startDate}T00:00:00`).getTime();
+        const eTimeEnd = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : new Date(`${startDate}T23:59:59.999`).getTime();
+        return eTime >= sTime && eTime <= eTimeEnd;
+      }
       return true;
     });
-  }, [events, timeFilter]);
+  }, [events, timeFilter, startDate, endDate]);
 
   // Filter Shopify Orders strictly by the selected Time Range
   const filteredOrders = useMemo(() => {
@@ -526,9 +680,14 @@ export default function FunnelAnalyticsRoute() {
       }
       if (timeFilter === "7d") return now - oTime <= 7 * 24 * 3600 * 1000;
       if (timeFilter === "30d") return now - oTime <= 30 * 24 * 3600 * 1000;
+      if (timeFilter === "custom" && startDate) {
+        const sTime = new Date(`${startDate}T00:00:00`).getTime();
+        const eTimeEnd = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : new Date(`${startDate}T23:59:59.999`).getTime();
+        return oTime >= sTime && oTime <= eTimeEnd;
+      }
       return true;
     });
-  }, [shopifyOrders, timeFilter]);
+  }, [shopifyOrders, timeFilter, startDate, endDate]);
 
   // 1. Build Multi-Index Quick Lookup for Shopify Catalog
   const catalogMaps = useMemo(() => {
@@ -593,22 +752,22 @@ export default function FunnelAnalyticsRoute() {
     };
   }, [shopifyProducts, shopifyCollections]);
 
-  // Aggregate Top-to-Bottom Funnel Metrics
+  // Aggregate Top-to-Bottom Funnel Metrics with Server-Side Big Data Aggregation
   const funnelMetrics = useMemo(() => {
-    const rawLandings = new Set(filteredEvents.map((e: any) => e.visitorId)).size || (sessions.length > 0 ? sessions.length : 0);
-    const rawProductViews = new Set(
+    const rawLandings = serverFunnelCounts.totalSessions || serverFunnelCounts.totalVisitors || (new Set(filteredEvents.map((e: any) => e.visitorId)).size) || (sessions.length > 0 ? sessions.length : 0);
+    const rawProductViews = serverFunnelCounts.productViews || new Set(
       filteredEvents.filter((e: any) => e.eventType === "product_viewed").map((e: any) => e.visitorId)
     ).size;
-    const rawCartAdds = new Set(
+    const rawCartAdds = serverFunnelCounts.cartAdds || new Set(
       filteredEvents.filter((e: any) => e.eventType === "product_added_to_cart").map((e: any) => e.visitorId)
     ).size;
-    const rawCartViews = new Set(
+    const rawCartViews = serverFunnelCounts.cartViews || new Set(
       filteredEvents.filter((e: any) => e.eventType === "cart_viewed").map((e: any) => e.visitorId)
     ).size;
-    const rawCheckouts = new Set(
+    const rawCheckouts = serverFunnelCounts.checkouts || new Set(
       filteredEvents.filter((e: any) => e.eventType === "checkout_started" || e.eventType === "checkout_completed").map((e: any) => e.visitorId)
     ).size;
-    const rawEventOrders = new Set(
+    const rawEventOrders = serverFunnelCounts.orders || new Set(
       filteredEvents.filter((e: any) => e.eventType === "checkout_completed").map((e: any) => e.visitorId)
     ).size;
 
@@ -622,6 +781,7 @@ export default function FunnelAnalyticsRoute() {
     const cartRate = productViews > 0 ? `${Math.round((cartAdds / productViews) * 100)}%` : "0%";
     const checkoutRate = cartAdds > 0 ? `${Math.round((checkouts / cartAdds) * 100)}%` : "0%";
     const orderRate = checkouts > 0 ? `${Math.round((orders / checkouts) * 100)}%` : "0%";
+    const overallConversionRate = landings > 0 ? `${((orders / landings) * 100).toFixed(2)}%` : "0.00%";
 
     return {
       landings,
@@ -634,8 +794,9 @@ export default function FunnelAnalyticsRoute() {
       cartRate,
       checkoutRate,
       orderRate,
+      overallConversionRate,
     };
-  }, [filteredEvents, filteredOrders, sessions]);
+  }, [serverFunnelCounts, filteredEvents, filteredOrders, sessions]);
 
   // Product Trends & Performance Aggregator with 100% Real Catalog Mapping
   const productAnalytics = useMemo(() => {
@@ -1325,20 +1486,27 @@ export default function FunnelAnalyticsRoute() {
                 { label: "Last 7 Days", value: "7d" },
                 { label: "Last 30 Days", value: "30d" },
                 { label: "All-Time", value: "all" },
+                { label: "📅 Custom", value: "custom" },
               ].map((t) => (
                 <button
                   key={t.value}
-                  onClick={() => startTransition(() => setTimeFilter(t.value))}
+                  onClick={() => {
+                    if (t.value === "custom") {
+                      setShowCustomPicker(!showCustomPicker);
+                    } else {
+                      handleDateFilterSelect(t.value);
+                    }
+                  }}
                   style={{
                     padding: "5px 12px",
                     borderRadius: "4px",
                     border: "none",
-                    background: timeFilter === t.value ? "#ffffff" : "transparent",
-                    color: timeFilter === t.value ? "#0f172a" : "#64748b",
-                    fontWeight: timeFilter === t.value ? 700 : 500,
+                    background: (timeFilter === t.value || (t.value === "custom" && (timeFilter === "custom" || showCustomPicker))) ? "#ffffff" : "transparent",
+                    color: (timeFilter === t.value || (t.value === "custom" && (timeFilter === "custom" || showCustomPicker))) ? "#0f172a" : "#64748b",
+                    fontWeight: (timeFilter === t.value || (t.value === "custom" && (timeFilter === "custom" || showCustomPicker))) ? 700 : 500,
                     fontSize: "11.5px",
                     cursor: "pointer",
-                    boxShadow: timeFilter === t.value ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+                    boxShadow: (timeFilter === t.value || (t.value === "custom" && (timeFilter === "custom" || showCustomPicker))) ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
                   }}
                 >
                   {t.label}
@@ -1396,13 +1564,113 @@ export default function FunnelAnalyticsRoute() {
           </div>
         </div>
 
+        {/* CUSTOM DATE PICKER BAR & ACTIVE PERIOD BANNER */}
+        {(showCustomPicker || timeFilter === "custom") && (
+          <div style={{
+            background: "#ffffff",
+            padding: "12px 18px",
+            borderRadius: "10px",
+            border: "1px solid #cbd5e1",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.04)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "#334155" }}>📅 Select Date Window:</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "11.5px", color: "#64748b" }}>From</span>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "12px",
+                    color: "#1e293b",
+                    outline: "none"
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "11.5px", color: "#64748b" }}>To</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "12px",
+                    color: "#1e293b",
+                    outline: "none"
+                  }}
+                />
+              </div>
+              <button
+                onClick={() => handleDateFilterSelect("custom", customStart, customEnd)}
+                style={{
+                  background: "#4f46e5",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "5px 14px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 1px 2px rgba(79, 70, 229, 0.3)"
+                }}
+              >
+                Apply Date Range
+              </button>
+            </div>
+
+            <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+              Quick pick: <button onClick={() => { setCustomStart(new Date().toISOString().slice(0, 10)); setCustomEnd(new Date().toISOString().slice(0, 10)); handleDateFilterSelect("custom", new Date().toISOString().slice(0, 10), new Date().toISOString().slice(0, 10)); }} style={{ background: "none", border: "none", color: "#4f46e5", cursor: "pointer", textDecoration: "underline", padding: "0 4px" }}>Today</button> | <button onClick={() => { const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10); setCustomStart(y); setCustomEnd(y); handleDateFilterSelect("custom", y, y); }} style={{ background: "none", border: "none", color: "#4f46e5", cursor: "pointer", textDecoration: "underline", padding: "0 4px" }}>Yesterday</button>
+            </div>
+          </div>
+        )}
+
+        {/* ACTIVE PERIOD & METRIC SUMMARY BANNER */}
+        <div style={{
+          background: "linear-gradient(90deg, #f8fafc 0%, #f1f5f9 100%)",
+          padding: "8px 16px",
+          borderRadius: "8px",
+          border: "1px solid #e2e8f0",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "8px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b" }}>📅 Active Period:</span>
+            <span style={{ fontSize: "12px", fontWeight: 600, color: "#4f46e5", background: "#e0e7ff", padding: "2px 8px", borderRadius: "10px" }}>
+              {activeDateLabel}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <span style={{ fontSize: "12px", color: "#475569" }}>
+              Shopify Store Conversion Rate: <strong style={{ color: "#059669", fontSize: "13px" }}>{funnelMetrics.overallConversionRate}</strong>
+            </span>
+            <span style={{ fontSize: "11px", color: "#10b981", background: "#ecfdf5", padding: "2px 8px", borderRadius: "10px", fontWeight: 600 }}>
+              ⚡ High-Speed SQL Aggregation Active
+            </span>
+          </div>
+        </div>
+
         {/* 2. TOP KPI CARDS */}
         {isPending || isRefreshing ? (
-          <SkeletonKpiCards count={4} />
+          <SkeletonKpiCards count={5} />
         ) : (
         <div style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
           gap: "12px",
         }}>
           <div style={{ background: "#ffffff", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
@@ -1449,7 +1717,21 @@ export default function FunnelAnalyticsRoute() {
 
           <div style={{ background: "#ffffff", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
             <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "#64748b" }}>
-              4. Completed Orders
+              4. Reached Checkout
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "8px" }}>
+              <span style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {funnelMetrics.checkouts.toLocaleString()}
+              </span>
+              <span style={{ fontSize: "12px", color: "#0891b2", fontWeight: 600 }}>({funnelMetrics.checkoutRate})</span>
+            </div>
+            <div style={{ marginTop: "12px", height: "3px", borderRadius: "2px", background: "#0891b2", width: funnelMetrics.checkoutRate }}></div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#64748b" }}>Initiated checkout</div>
+          </div>
+
+          <div style={{ background: "#ffffff", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "#64748b" }}>
+              5. Completed Orders
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "8px" }}>
               <span style={{ fontSize: "28px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
