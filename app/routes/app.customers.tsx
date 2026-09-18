@@ -63,39 +63,50 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.warn("Admin auth non-blocking in customers loader:", err);
   }
 
-  // 2. Fetch DB customer links and identified visitors
+  // 2. Fetch DB customer links and identified visitors with safe timeout & take limit
   try {
-    dbCustomers = await prisma.shopifyCustomer.findMany({
-      include: {
-        visitorLinks: {
-          include: {
-            visitor: {
-              include: { events: true, identities: true },
+    const dbPromise = Promise.all([
+      prisma.shopifyCustomer.findMany({
+        include: {
+          visitorLinks: {
+            include: {
+              visitor: {
+                include: { events: { take: 5 }, identities: true },
+              },
             },
           },
         },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 500,
-    });
+        orderBy: { updatedAt: "desc" },
+        take: 60,
+      }),
+      prisma.visitor.findMany({
+        where: {
+          OR: [
+            { status: "identified" },
+            { identities: { some: {} } },
+            { customerLinks: { some: {} } },
+          ],
+        },
+        include: {
+          identities: true,
+          customerLinks: { include: { customer: true } },
+          events: { orderBy: { timestamp: "desc" }, take: 10 },
+        },
+        take: 60,
+      }),
+    ]);
 
-    identifiedVisitors = await prisma.visitor.findMany({
-      where: {
-        OR: [
-          { status: "identified" },
-          { identities: { some: {} } },
-          { customerLinks: { some: {} } },
-        ],
-      },
-      include: {
-        identities: true,
-        customerLinks: { include: { customer: true } },
-        events: { orderBy: { timestamp: "desc" }, take: 20 },
-      },
-      take: 500,
-    });
+    const timeout = new Promise<any>((_, reject) =>
+      setTimeout(() => reject(new Error("Customers DB Timeout")), 6000)
+    );
+
+    const [customers, visitors] = await Promise.race([dbPromise, timeout]);
+    dbCustomers = customers || [];
+    identifiedVisitors = visitors || [];
   } catch (dbErr) {
     console.warn("Customers DB query fallback:", dbErr);
+    dbCustomers = [];
+    identifiedVisitors = [];
   }
 
   // Build lookup maps for fast matching

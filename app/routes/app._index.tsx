@@ -127,50 +127,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.warn("Admin auth non-blocking:", err);
   }
 
-  // ALWAYS QUERY DATABASE FOR VISITOR AND EVENT DATA
+  // ALWAYS QUERY DATABASE FOR VISITOR AND EVENT DATA WITH TIMEOUT & TAKE LIMIT
   try {
-    const [allIdentified, recentAnonymous] = await Promise.all([
-      prisma.visitor.findMany({
-        where: {
-          OR: [
-            { status: "identified" },
-            { identities: { some: {} } },
-            { customerLinks: { some: {} } },
-          ],
-        },
-        include: {
-          sessions: true,
-          events: { orderBy: { timestamp: "desc" }, take: 40 },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
-        orderBy: { lastSeenAt: "desc" },
-      }),
-      prisma.visitor.findMany({
-        where: {
-          status: "anonymous",
-          identities: { none: {} },
-          customerLinks: { none: {} },
-        },
-        include: {
-          sessions: true,
-          events: { orderBy: { timestamp: "desc" }, take: 40 },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
-        orderBy: { lastSeenAt: "desc" },
-        take: 1000,
-      }),
-    ]);
+    const fetchVisitors = prisma.visitor.findMany({
+      take: 60,
+      include: {
+        sessions: { orderBy: { startedAt: "desc" }, take: 3 },
+        events: { orderBy: { timestamp: "desc" }, take: 15 },
+        identities: true,
+        customerLinks: { include: { customer: true } },
+      },
+      orderBy: { lastSeenAt: "desc" },
+    });
 
-    const visitorMap = new Map();
-    for (const v of allIdentified) visitorMap.set(v.id, v);
-    for (const v of recentAnonymous) {
-      if (!visitorMap.has(v.id)) visitorMap.set(v.id, v);
-    }
-    const activeVisitors = Array.from(visitorMap.values()).sort(
-      (a: any, b: any) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime()
+    const timeout = new Promise<any[]>((_, reject) =>
+      setTimeout(() => reject(new Error("Dashboard DB Timeout")), 6000)
     );
+
+    const combinedVisitors = await Promise.race([fetchVisitors, timeout]);
+    const activeVisitors = combinedVisitors;
 
     if (activeVisitors.length > 0) {
       totalTrackedVisitors = activeVisitors.length;

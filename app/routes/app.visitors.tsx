@@ -32,50 +32,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   let visitors: any[] = [];
   try {
-    const [allIdentified, recentAnonymous] = await Promise.all([
-      prisma.visitor.findMany({
-        where: {
-          OR: [
-            { status: "identified" },
-            { identities: { some: {} } },
-            { customerLinks: { some: {} } },
-          ],
-        },
-        include: {
-          sessions: { orderBy: { startedAt: "desc" } },
-          events: { orderBy: { timestamp: "desc" }, take: 50 },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
-        orderBy: { lastSeenAt: "desc" },
-      }),
-      prisma.visitor.findMany({
-        where: {
-          status: "anonymous",
-          identities: { none: {} },
-          customerLinks: { none: {} },
-        },
-        include: {
-          sessions: { orderBy: { startedAt: "desc" } },
-          events: { orderBy: { timestamp: "desc" }, take: 50 },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
-        orderBy: { lastSeenAt: "desc" },
-        take: 1000,
-      }),
-    ]);
+    const fetchVisitorsPromise = prisma.visitor.findMany({
+      take: 80,
+      include: {
+        sessions: { orderBy: { startedAt: "desc" }, take: 5 },
+        events: { orderBy: { timestamp: "desc" }, take: 15 },
+        identities: true,
+        customerLinks: { include: { customer: true } },
+      },
+      orderBy: { lastSeenAt: "desc" },
+    });
 
-    const visitorMap = new Map();
-    for (const v of allIdentified) visitorMap.set(v.id, v);
-    for (const v of recentAnonymous) {
-      if (!visitorMap.has(v.id)) visitorMap.set(v.id, v);
-    }
-    visitors = Array.from(visitorMap.values()).sort(
-      (a: any, b: any) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime()
+    const timeoutPromise = new Promise<any[]>((_, reject) =>
+      setTimeout(() => reject(new Error("DB Timeout")), 6000)
     );
+
+    visitors = await Promise.race([fetchVisitorsPromise, timeoutPromise]);
   } catch (dbErr) {
     console.warn("Visitors DB query fallback:", dbErr);
+    visitors = [];
   }
 
   const enriched = visitors.map((v) => {
@@ -274,9 +249,10 @@ export default function VisitorsList() {
   useEffect(() => {
     if (!autoRefresh || selectedVisitor !== null) return;
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       revalidator.revalidate();
       setLastRefreshedAt(new Date().toLocaleTimeString());
-    }, 5000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [autoRefresh, selectedVisitor, revalidator]);
 
@@ -333,7 +309,7 @@ export default function VisitorsList() {
       subtitle={`Displaying ${filtered.length} active shoppers tracked across the store`}
       secondaryActions={[
         {
-          content: autoRefresh ? "🟢 Auto-Refresh (15s)" : "⏸️ Auto-Refresh: Off",
+          content: autoRefresh ? "🟢 Live Auto-Refresh (15s)" : "⏸️ Auto-Refresh: Off",
           onAction: () => setAutoRefresh(!autoRefresh),
         },
         {
@@ -424,7 +400,7 @@ export default function VisitorsList() {
 
           {filtered.length === 0 ? (
             <div style={{ padding: "48px 16px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
-              No visitor records match this filter.
+              No visitor records match this filter. Use the Simulator to pump live test traffic.
             </div>
           ) : (
             filtered.map((v: any) => {
@@ -438,361 +414,164 @@ export default function VisitorsList() {
               return (
                 <div
                   key={v.id}
-                  onClick={() => setSelectedVisitor(v)}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
                     gap: "12px",
-                    alignItems: "center",
                     padding: "12px 16px",
+                    alignItems: "center",
                     borderBottom: "1px solid #f1f5f9",
-                    cursor: "pointer",
-                    transition: "background 0.12s ease",
+                    background: "#ffffff",
+                    fontSize: "12px",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f8fafc")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
-                  {/* Visitor / Lead */}
-                  <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{
-                      width: "8px",
-                      height: "8px",
+                  {/* Lead Info */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                    <div style={{
+                      width: "32px",
+                      height: "32px",
                       borderRadius: "50%",
-                      background: isIdentified ? "#0F8A5F" : v.intentScore >= 60 ? "#d97706" : "#94a3b8",
+                      background: isIdentified ? "linear-gradient(135deg, #10b981 0%, #059669 100%)" : "#f1f5f9",
+                      color: isIdentified ? "#ffffff" : "#64748b",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 700,
+                      fontSize: "12px",
                       flex: "none",
-                    }}></span>
+                    }}>
+                      {isIdentified ? "👤" : "🕶️"}
+                    </div>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: "13px", color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={{ fontWeight: 600, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {displayName}
                       </div>
-                      <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {v.visitorId.substring(0, 16)}...
+                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                        ID: {v.visitorId.substring(0, 8)}...
                       </div>
                     </div>
                   </div>
 
                   {/* Device & OS */}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: "12px", color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {v.browser} on {v.os}
+                  <div>
+                    <div style={{ fontWeight: 500, color: "#334155" }}>
+                      {v.deviceCategory === "mobile" ? "📱 Mobile" : "💻 Desktop"}
                     </div>
-                    <div style={{ fontSize: "11px", color: "#94a3b8", fontFamily: "monospace" }}>
-                      {v.screenResolution}
+                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                      {v.os} • {v.browser}
                     </div>
                   </div>
 
                   {/* Captured Contact */}
-                  <div style={{ minWidth: 0 }}>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                     {v.primaryEmail ? (
-                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#0F8A5F", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {v.primaryEmail}
+                      <div style={{ color: "#059669", fontWeight: 600, fontSize: "11.5px" }}>
+                        ✉️ {v.primaryEmail}
+                      </div>
+                    ) : v.primaryPhone ? (
+                      <div style={{ color: "#059669", fontWeight: 600, fontSize: "11.5px" }}>
+                        📞 {v.primaryPhone}
                       </div>
                     ) : (
-                      <span style={{ color: "#94a3b8", fontSize: "11.5px" }}>Anonymous</span>
-                    )}
-                    {v.primaryPhone && (
-                      <div style={{ fontSize: "11px", color: "#2563eb", fontFamily: "monospace" }}>
-                        {v.primaryPhone}
-                      </div>
+                      <span style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "11.5px" }}>
+                        Unidentified
+                      </span>
                     )}
                   </div>
 
                   {/* Intent Score */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div>
                     <span style={{
                       display: "inline-block",
-                      padding: "2px 7px",
-                      background: v.intentScore > 60 ? "#dcfce7" : "#e0e7ff",
-                      color: v.intentScore > 60 ? "#15803d" : "#3730a3",
-                      borderRadius: "4px",
-                      fontSize: "11.5px",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      fontSize: "11px",
                       fontWeight: 700,
-                      fontFamily: "monospace",
+                      background: v.intentScore >= 70 ? "#dcfce7" : v.intentScore >= 40 ? "#fef3c7" : "#f1f5f9",
+                      color: v.intentScore >= 70 ? "#166534" : v.intentScore >= 40 ? "#92400e" : "#475569",
                     }}>
-                      {`${v.intentScore}/100`}
-                    </span>
-                    <span style={{ fontSize: "11px", color: "#64748b", textTransform: "capitalize" }}>
-                      {v.intentTier.replace("_", " ")}
+                      {v.intentScore}/100 ({v.intentTier})
                     </span>
                   </div>
 
                   {/* Browsing & Cart */}
                   <div>
-                    <div style={{ fontSize: "12px", fontWeight: 600, color: "#334155" }}>
-                      {v.productsViewedCount} viewed
+                    <div style={{ fontWeight: 600, color: "#334155" }}>
+                      {v.productsViewedCount} PDPs • {v.cartEventsCount} Carts
                     </div>
-                    <div style={{ fontSize: "11px", color: v.cartEventsCount > 0 ? "#d97706" : "#94a3b8" }}>
-                      {v.cartEventsCount > 0 ? `${v.cartEventsCount} in cart ($${v.cartValue})` : "No cart items"}
-                    </div>
+                    {v.cartValue > 0 && (
+                      <div style={{ fontSize: "11px", color: "#f59e0b", fontWeight: 700 }}>
+                        ₹{v.cartValue.toLocaleString()} in bag
+                      </div>
+                    )}
                   </div>
 
                   {/* Last Seen */}
-                  <div style={{ fontSize: "11.5px", color: "#64748b", fontFamily: "monospace" }}>
-                    {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  <div style={{ color: "#64748b", fontSize: "11px" }}>
+                    {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
 
-                  {/* Action Button: Opens Journey Popup */}
+                  {/* Action */}
                   <div style={{ textAlign: "right" }}>
-                    <button
-                      style={{
-                        padding: "5px 10px",
-                        background: "#2563eb",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: "6px",
-                        fontSize: "11.5px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedVisitor(v);
-                      }}
-                    >
-                      View Journey →
-                    </button>
+                    <Button size="micro" onClick={() => setSelectedVisitor(v)}>
+                      Inspect Journey
+                    </Button>
                   </div>
                 </div>
               );
             })
           )}
-
-          <div style={{ padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#faf9f6", fontSize: "11.5px", color: "#64748b" }}>
-            <span>Showing {filtered.length} active visitor records</span>
-            <span style={{ fontFamily: "monospace" }}>Live Auto-Refresh 5s</span>
-          </div>
         </div>
-      </BlockStack>
 
-      {/* POPUP MODAL: Interactive Journey & Lore Details */}
-      {selectedVisitor && (
-        <Modal
-          open={Boolean(selectedVisitor)}
-          onClose={() => setSelectedVisitor(null)}
-          title={`Visitor Journey & Profile: ${selectedVisitor.visitorId}`}
-          primaryAction={{
-            content: "Close Details",
-            onAction: () => setSelectedVisitor(null),
-          }}
-          size="large"
-        >
-          <Modal.Section>
-            <BlockStack gap="400">
-              {/* Top Banner */}
-              {selectedVisitor.status === "identified" || selectedVisitor.primaryEmail || selectedVisitor.primaryPhone ? (
-                <Banner title="🟢 Contact Identity Unmasked & Verified" tone="success">
-                  <p>
-                    This shopper has been identified through campaign parameters, form autofill sniffing, or checkout sessions.
-                  </p>
-                </Banner>
-              ) : (
-                <Banner title="🔵 Anonymous Active Shopper" tone="info">
-                  <p>
-                    This visitor is currently browsing anonymously. When they type their email/phone or click a campaign ad, their identity unmasks instantly.
-                  </p>
-                </Banner>
-              )}
-
-              {/* Unmasked Contact Profile Card */}
-              {(selectedVisitor.primaryEmail || selectedVisitor.primaryPhone) && (
-                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "14px 16px" }}>
-                  <InlineStack align="space-between" blockAlign="center">
-                    <BlockStack gap="100">
-                      <Text variant="headingSm" as="h3">Unmasked Contact Information</Text>
-                      <InlineStack gap="300">
-                        {selectedVisitor.primaryEmail && (
-                          <Badge tone="success">{`Email: ${selectedVisitor.primaryEmail}`}</Badge>
-                        )}
-                        {selectedVisitor.primaryPhone && (
-                          <Badge tone="info">{`Phone: ${selectedVisitor.primaryPhone}`}</Badge>
-                        )}
-                      </InlineStack>
-                    </BlockStack>
-                    <InlineStack gap="200">
-                      {selectedVisitor.primaryEmail && (
-                        <Button size="slim" onClick={() => copyToClipboard(selectedVisitor.primaryEmail, "Email")}>
-                          {copiedText === "Email" ? "✓ Copied" : "Copy Email"}
-                        </Button>
-                      )}
-                      {selectedVisitor.primaryPhone && (
-                        <Button size="slim" variant="primary" onClick={() => copyToClipboard(selectedVisitor.primaryPhone, "Phone")}>
-                          {copiedText === "Phone" ? "✓ Copied" : "Copy Phone"}
-                        </Button>
-                      )}
-                    </InlineStack>
+        {/* Modal: Visitor Clickstream Journey */}
+        {selectedVisitor && (
+          <Modal
+            open={!!selectedVisitor}
+            onClose={() => setSelectedVisitor(null)}
+            title={`Shopper Journey: ${selectedVisitor.visitorId}`}
+            primaryAction={{
+              content: "Close",
+              onAction: () => setSelectedVisitor(null),
+            }}
+          >
+            <Modal.Section>
+              <BlockStack gap="400">
+                <div style={{ background: "#f8fafc", padding: "14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                  <InlineStack align="space-between">
+                    <div>
+                      <Text variant="headingSm" as="h4">Device Profile</Text>
+                      <Text variant="bodySm" as="p" tone="subdued">
+                        {selectedVisitor.os} • {selectedVisitor.browser} ({selectedVisitor.screenResolution})
+                      </Text>
+                    </div>
+                    <Badge tone={selectedVisitor.status === "identified" ? "success" : "info"}>
+                      {selectedVisitor.status}
+                    </Badge>
                   </InlineStack>
                 </div>
-              )}
 
-              {/* 2-Column Summary: Behavioral Intent + Device Profile */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-                {/* Behavioral Intent */}
-                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px" }}>
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text variant="headingSm" as="h4">Intent Score</Text>
-                      <Badge tone={selectedVisitor.intentTier === "very_high" ? "success" : selectedVisitor.intentTier === "high" ? "attention" : undefined}>
-                        {`${selectedVisitor.intentScore}/100 • ${selectedVisitor.intentTier.toUpperCase()}`}
-                      </Badge>
-                    </InlineStack>
-                    <ProgressBar progress={selectedVisitor.intentScore} size="small" tone={selectedVisitor.intentScore > 60 ? "success" : "highlight"} />
-                    <Divider />
-                    <InlineStack align="space-between">
-                      <Text variant="bodySm" tone="subdued" as="span">Products Viewed</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="span">{selectedVisitor.productsViewedCount}</Text>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text variant="bodySm" tone="subdued" as="span">Cart Additions</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="span">{`${selectedVisitor.cartEventsCount} ($${selectedVisitor.cartValue})`}</Text>
-                    </InlineStack>
-                  </BlockStack>
-                </div>
-
-                {/* Device & Hardware */}
-                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px" }}>
-                  <BlockStack gap="150">
-                    <Text variant="headingSm" as="h4">Device Profile</Text>
-                    <InlineStack align="space-between">
-                      <Text variant="bodySm" tone="subdued" as="span">Device</Text>
-                      <Badge>{selectedVisitor.deviceCategory.toUpperCase()}</Badge>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text variant="bodySm" tone="subdued" as="span">Browser</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="span">{selectedVisitor.browser}</Text>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text variant="bodySm" tone="subdued" as="span">Operating System</Text>
-                      <Text variant="bodySm" fontWeight="bold" as="span">{selectedVisitor.os}</Text>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text variant="bodySm" tone="subdued" as="span">Resolution</Text>
-                      <Text variant="bodySm" as="span" style={{ fontFamily: "monospace" }}>{selectedVisitor.screenResolution}</Text>
-                    </InlineStack>
-                  </BlockStack>
-                </div>
-              </div>
-
-              {/* Chronological Event Timeline */}
-              <div style={{ marginTop: "10px" }}>
-                <Text variant="headingSm" as="h3">Chronological Clickstream Timeline</Text>
-                <div style={{ position: "relative", paddingLeft: "24px", borderLeft: "2px solid #e2e8f0", marginTop: "14px" }}>
-                  {(!selectedVisitor.events || selectedVisitor.events.length === 0) ? (
-                    <Text variant="bodyMd" tone="subdued" as="p">No clickstream events recorded yet.</Text>
-                  ) : (
-                    selectedVisitor.events.map((evt: any, idx: number) => {
-                      const dateStr = new Date(evt.timestamp).toLocaleString();
-                      const meta = evt.metadata || {};
-                      const utm = evt.utm || {};
-
-                      let badgeTone: "success" | "attention" | "info" | undefined = undefined;
-                      let badgeLabel = evt.eventType.replace(/_/g, " ").toUpperCase();
-
-                      if (evt.eventType === "checkout_completed") {
-                        badgeTone = "success";
-                        badgeLabel = "ORDER COMPLETED";
-                      } else if (evt.eventType === "checkout_started") {
-                        badgeTone = "attention";
-                        badgeLabel = "CHECKOUT STARTED";
-                      } else if (evt.eventType === "product_added_to_cart") {
-                        badgeTone = "attention";
-                        badgeLabel = "ADDED TO CART";
-                      } else if (evt.eventType === "product_viewed") {
-                        badgeTone = "info";
-                        badgeLabel = "PRODUCT VIEWED";
-                      } else if (evt.eventType === "page_viewed") {
-                        badgeLabel = "PAGE VIEW";
-                      }
-
-                      return (
-                        <div key={evt.id || idx} style={{ marginBottom: "22px", position: "relative" }}>
-                          {/* Timeline dot */}
-                          <div
-                            style={{
-                              position: "absolute",
-                              left: "-31px",
-                              top: "4px",
-                              width: "14px",
-                              height: "14px",
-                              borderRadius: "50%",
-                              backgroundColor:
-                                evt.eventType === "checkout_completed"
-                                  ? "#008060"
-                                  : evt.eventType === "product_added_to_cart" || evt.eventType === "checkout_started"
-                                  ? "#d97706"
-                                  : evt.eventType === "product_viewed"
-                                  ? "#2563eb"
-                                  : "#6b7280",
-                              border: "2px solid #ffffff",
-                              boxShadow: "0 0 0 1px #cbd5e1",
-                            }}
-                          />
-
-                          <BlockStack gap="100">
-                            <InlineStack gap="200" align="start" blockAlign="center">
-                              <Badge tone={badgeTone}>{badgeLabel}</Badge>
-                              <Text variant="bodySm" tone="subdued" as="span">{dateStr}</Text>
-                              {utm.isMetaAd && (
-                                <Badge tone="attention">🎯 META AD CAMPAIGN</Badge>
-                              )}
-                            </InlineStack>
-
-                            {/* Page URL / Click Target */}
-                            {evt.pageUrl && (
-                              <div style={{ background: "#f8fafc", padding: "6px 10px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-                                <Text variant="bodySm" as="p">
-                                  <strong>URL: </strong>
-                                  <a href={evt.pageUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", wordBreak: "break-all" }}>
-                                    {evt.pageUrl}
-                                  </a>
-                                </Text>
-                              </div>
-                            )}
-
-                            {/* Product Details */}
-                            {(evt.productId || meta.title) && (
-                              <InlineStack gap="200" blockAlign="center">
-                                <Text variant="bodyMd" fontWeight="semibold" as="span">
-                                  🛍️ Product: {meta.title || evt.productId}
-                                </Text>
-                                {meta.price && (
-                                  <Badge tone="success">{`$${meta.price}`}</Badge>
-                                )}
-                              </InlineStack>
-                            )}
-
-                            {/* UTM Campaign Details */}
-                            {(utm.utmCampaign || utm.utmSource || utm.fbclid) && (
-                              <div style={{ background: "#fdf4ff", border: "1px solid #f0abfc", padding: "6px 10px", borderRadius: "6px" }}>
-                                <InlineStack gap="300" wrap>
-                                  {utm.utmSource && <Text variant="bodySm" as="span"><strong>Source:</strong> {utm.utmSource}</Text>}
-                                  {utm.utmMedium && <Text variant="bodySm" as="span"><strong>Medium:</strong> {utm.utmMedium}</Text>}
-                                  {utm.utmCampaign && <Text variant="bodySm" as="span"><strong>Campaign:</strong> {utm.utmCampaign}</Text>}
-                                  {utm.fbclid && <Text variant="bodySm" as="span"><strong>Meta Click ID:</strong> {utm.fbclid.substring(0, 16)}...</Text>}
-                                </InlineStack>
-                              </div>
-                            )}
-
-                            {/* Cart Value */}
-                            {meta.cartValue && (
-                              <Text variant="bodySm" fontWeight="bold" as="p">
-                                🛒 Cart Value: ${meta.cartValue}
-                              </Text>
-                            )}
-                          </BlockStack>
+                <div>
+                  <Text variant="headingSm" as="h4">Clickstream Timeline ({selectedVisitor.events.length} events)</Text>
+                  <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px", maxHeight: "360px", overflowY: "auto" }}>
+                    {selectedVisitor.events.map((evt: any, idx: number) => (
+                      <div key={idx} style={{ padding: "10px 14px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "6px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                          <Badge tone="info">{evt.eventType}</Badge>
+                          <span style={{ fontSize: "11px", color: "#94a3b8" }}>{new Date(evt.timestamp).toLocaleTimeString()}</span>
                         </div>
-                      );
-                    })
-                  )}
+                        {evt.pageUrl && <div style={{ fontSize: "11.5px", color: "#64748b", wordBreak: "break-all" }}>{evt.pageUrl}</div>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </BlockStack>
-          </Modal.Section>
-        </Modal>
-      )}
+              </BlockStack>
+            </Modal.Section>
+          </Modal>
+        )}
+      </BlockStack>
     </Page>
   );
 }
-
 
 export function ErrorBoundary() {
   const error = useRouteError() as any;
@@ -806,7 +585,7 @@ export function ErrorBoundary() {
             ⚠️ Storefront Visitors Loading Notice
           </h2>
           <p style={{ color: "#374151", margin: "0 0 15px 0", fontSize: "13px" }}>
-            <strong>Details:</strong> {error?.message || error?.statusText || "Unexpected rendering error"}
+            <strong>Details:</strong> {error?.message || error?.statusText || "Database reconnecting..."}
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -823,14 +602,6 @@ export function ErrorBoundary() {
           >
             🔄 Reload Page
           </button>
-          {error?.stack && (
-            <details style={{ marginTop: "14px" }}>
-              <summary style={{ cursor: "pointer", color: "#64748b", fontSize: "12px" }}>View Technical Stack Trace</summary>
-              <pre style={{ background: "#1f2937", color: "#f9fafb", padding: "12px", borderRadius: "6px", overflowX: "auto", fontSize: "11px", marginTop: "8px" }}>
-                {error.stack}
-              </pre>
-            </details>
-          )}
         </div>
       </div>
     </Page>

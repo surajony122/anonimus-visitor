@@ -137,22 +137,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopRecord: any = null;
 
   try {
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain },
-    });
+    const dbPromise = Promise.all([
+      prisma.shop.findUnique({ where: { shopDomain } }),
+      prisma.event.findMany({
+        take: 400,
+        orderBy: { timestamp: "desc" },
+      }),
+      prisma.storefrontSession.findMany({
+        take: 150,
+        orderBy: { startedAt: "desc" },
+      }),
+    ]);
+
+    const timeoutPromise = new Promise<any>((_, reject) =>
+      setTimeout(() => reject(new Error("Funnel DB Timeout")), 6000)
+    );
+
+    const [shop, evts, sess] = await Promise.race([dbPromise, timeoutPromise]);
     shopRecord = shop;
-
-    events = await prisma.event.findMany({
-      orderBy: { timestamp: "desc" },
-      take: 1000,
-    });
-
-    sessions = await prisma.storefrontSession.findMany({
-      orderBy: { startedAt: "desc" },
-      take: 500,
-    });
+    events = evts || [];
+    sessions = sess || [];
   } catch (dbErr) {
     console.warn("Funnel DB fetch warning:", dbErr);
+    events = [];
+    sessions = [];
   }
 
   let metaSettings: { accessToken?: string; pixelId?: string; adAccountId?: string } = {};
