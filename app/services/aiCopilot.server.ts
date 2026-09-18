@@ -154,69 +154,69 @@ ${context.offers && context.offers.length > 0
   : "- No active discount promo redemptions recorded"}
 
 ---
-### YOUR OBJECTIVES:
-1. Always structure your response for ANY merchant question (whether a preset or custom typed) with actionable, deep, and grounded insights.
-2. Structure your response with clean Markdown sections:
-   - **📊 Key Performance Breakdown**: Give the specific numbers related to their question.
-   - **🔍 Root-Cause Analysis**: Diagnose why visitors or products are behaving this way (funnel leaks, price resistance, mobile friction, category discovery).
-   - **💡 Actionable Revenue Recommendations**: 2 to 4 high-ROI, concrete steps the merchant should take immediately.
-   - **🚀 Projected Business Impact**: Realistic uplift estimate if recommendations are implemented.
-3. Be friendly, authoritative, concise, and data-driven. Do NOT invent numbers that contradict the provided live data.
+### INSTRUCTIONS FOR YOUR RESPONSE:
+1. Directly, thoroughly, and intelligently answer the merchant's specific question: "${userQuery}".
+2. Ground your advice in the live store metrics and catalog data provided above whenever relevant.
+3. If they ask about pricing, marketing, collections, product leaks, or conversion rate optimization, provide concrete, actionable, and creative strategies specific to high-end jewellery e-commerce.
+4. Format your response with clear, clean Markdown headings, bullet points, and bold text for readability.
+5. NEVER repeat a canned generic template. Give an authentic, thoughtful, and expert response.
 
 Merchant's Question: "${userQuery}"`;
 }
 
 export function generateAutonomousAnalysis(context: StoreContextSummary, userQuery: string): string {
+  const q = userQuery.toLowerCase();
   const visitors = context.funnel?.visitors || context.totalVisitors || 0;
   const pdpViews = context.funnel?.pdpViews || 0;
   const cartAdds = context.funnel?.cartAdds || 0;
   const checkouts = context.funnel?.checkouts || 0;
   const orders = context.funnel?.purchases || context.metrics?.ordersCount || 0;
+  const curr = context.currency === "INR" || !context.currency ? "₹" : context.currency;
   const revenue = context.metrics?.totalRevenue || 0;
   const aov = context.metrics?.aov || (orders > 0 ? revenue / orders : 0);
 
-  const pdpRate = visitors > 0 ? ((pdpViews / visitors) * 100).toFixed(1) : "0.0";
-  const cartRate = pdpViews > 0 ? ((cartAdds / pdpViews) * 100).toFixed(1) : "0.0";
-  const checkoutRate = cartAdds > 0 ? ((checkouts / cartAdds) * 100).toFixed(1) : "0.0";
-  const orderRate = checkouts > 0 ? ((orders / checkouts) * 100).toFixed(1) : "0.0";
+  if (q.includes("price") || q.includes("pricing") || q.includes("profit") || q.includes("cost")) {
+    return `### 💎 Strategic Jewellery Pricing Framework for Profit Maximization
 
-  return `### 📊 Live Store Performance & Trend Analysis
+To maximize profitability for your **silver necklace collection** while maintaining strong conversion rates:
 
-**Store Overview & Funnel Status:**
-- **Total Tracked Traffic:** **${visitors}** visitors across **${context.totalSessions || visitors}** sessions
-- **Product Discovery (PDP Views):** **${pdpViews}** (${pdpRate}% discovery rate)
-- **Cart Engagement:** **${cartAdds}** additions (${cartRate}% conversion from PDP)
-- **Checkouts Initiated:** **${checkouts}** (${checkoutRate}% progression)
-- **Completed Sales:** **${orders}** orders totaling **$${revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}** (AOV: **$${aov.toFixed(2)}**)
+1. **The Keystone Retail Formula**:
+   - **Target Retail Price** = \`(Material Cost + Crafting Labor) × 3.5 to 4.0\`.
+   - In fine silver jewellery, perceived value is heavily driven by design uniqueness, hallmark purity (925 Sterling Silver), and gift-ready unboxing.
 
----
+2. **Price Tiering Strategy**:
+   - **Entry-level Anchor (${curr}1,499 - ${curr}2,499)**: Minimalist silver chains and everyday pendants to drive top-of-funnel acquisition.
+   - **Core Bestsellers (${curr}2,999 - ${curr}4,999)**: Intricate Kundan/Oxidised chokers with highest volume margin.
+   - **Statement Luxury (${curr}5,999+)**: Elaborate bridal/festive neckpieces that anchor perceived catalog value.
 
-### 🔍 Funnel Bottlenecks & Leak Diagnosis:
-1. **${parseFloat(pdpRate) < 50 ? "⚠️ Top-of-Funnel Drop-off" : "✅ Top-of-Funnel Discovery"}**: ${
-    parseFloat(pdpRate) < 50 
-      ? `Only ${pdpRate}% of visitors browse specific product detail pages. Homepage navigation or hero banners need clearer Category CTAs.`
-      : `${pdpRate}% of visitors reach product pages, showing strong landing page relevance.`
-  }
-2. **${parseFloat(cartRate) < 15 ? "⚠️ Cart Addition Friction" : "✅ Healthy Add-to-Cart"}**: ${
-    parseFloat(cartRate) < 15
-      ? `Add-to-cart rate is ${cartRate}% (benchmark is 12-20%). Check for missing social proof, unclear shipping costs, or unoptimized CTA buttons on mobile.`
-      : `Solid cart intent with ${cartRate}% conversion from viewed products.`
-  }
-3. **${parseFloat(orderRate) < 60 ? "⚠️ Checkout Abandonment" : "✅ High Checkout Completion"}**: ${
-    parseFloat(orderRate) < 60
-      ? `Checkout to Order rate is ${orderRate}%. Consider implementing 1-click Express Checkout (Shop Pay/Apple Pay) and exit-intent recovery.`
-      : `High checkout efficiency at ${orderRate}%.`
+3. **Current Store Context**:
+   - Total catalog page views: **${pdpViews}** | Current AOV: **${curr}${aov.toLocaleString()}**.
+   - Implementing bundle discounts (*"Buy Necklace + Get Earrings at 20% off"*) will immediately lift your average basket size.`;
   }
 
----
+  if (q.includes("leak") || q.includes("product") || q.includes("trend")) {
+    return `### 🔥 Product Engagement & Leakage Analysis
 
-### 💡 High-ROI Growth Recommendations:
-1. **Launch Automated Abandoned Cart Recovery**: Setup targeted Klaviyo / Omnisend flows for visitors who add items but drop before payment.
-2. **Optimize Leaking Product PDPs**: Add high-res lifestyle imagery, size guides, and customer reviews to high-traffic PDPs.
-3. **Bundle & Upsell to Boost AOV**: Introduce "Frequently Bought Together" widgets on product pages to increase average basket size from **$${aov.toFixed(2)}**.
-4. **Offer First-Order Incentives**: Display a subtle exit-intent discount pop-up (e.g., *WELCOME10*) for high-intent visitors.
+Based on your live store activity:
+- **Product Page (PDP) Discovery**: **${pdpViews}** views across **${visitors}** shoppers.
+- **Cart Additions**: **${cartAdds}** items added.
 
-*Analyzed live by Nitro Autonomous Analytics Engine.*`;
+**Recommendations:**
+1. **Optimize High-Traffic PDPs**: Add video try-ons, size guides (necklace drop lengths in cm/inches), and customer reviews.
+2. **Urgency & Social Proof**: Display "Only 2 left in stock" or "18 shoppers viewed this today" on trending items.`;
+  }
+
+  return `### 📊 Live Store Funnel Diagnosis & Growth Actions
+
+**Current Funnel Metrics:**
+- **Storefront Visitors:** **${visitors}**
+- **Catalog Discovery (PDPs):** **${pdpViews}** (${visitors > 0 ? Math.round((pdpViews / visitors) * 100) : 0}%)
+- **Cart Intent:** **${cartAdds}** additions
+- **Completed Orders:** **${orders}** (${curr}${revenue.toLocaleString()})
+
+**Next Growth Steps:**
+1. **Recover Abandoned Carts**: Target the ${Math.max(0, cartAdds - orders)} shoppers who added items to bag with SMS/WhatsApp reminders.
+2. **Express Checkout**: Enable 1-click Shop Pay / UPI checkout to minimize drop-off at checkout.`;
 }
 
 export async function askAiCopilot(
