@@ -24,6 +24,7 @@ export interface StoreContextSummary {
     aov: number;
     totalDiscountsGiven: number;
   };
+  topProducts?: Array<{ title: string; price: number; views: number; cartAdds: number; orders: number; cartRate: string }>;
   topCollections?: Array<{ title: string; views: number; addToCarts: number; revenue: number }>;
   topLeakingProducts?: Array<{ title: string; views: number; addToCarts: number; purchases: number; dropRate: string }>;
   winningProducts?: Array<{ title: string; views: number; purchases: number; convRate: string }>;
@@ -71,7 +72,7 @@ async function queryGemini(model: string, apiKey: string, prompt: string, histor
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(payload)
       },
-      timeout: 15000
+      timeout: 12000
     }, (res) => {
       let data = "";
       res.on("data", (chunk) => { data += chunk; });
@@ -109,15 +110,16 @@ function buildSystemPrompt(context: StoreContextSummary, userQuery: string): str
 You have REAL-TIME access to live store tracking data, checkout funnels, product trends, promo discount redemptions, and device matrices.
 
 ### CURRENT LIVE STORE METRICS & ANALYTICS:
-- Store Currency: ${context.currency || "INR"}
+- Store Domain: ${context.shopDomain || "theunniyarcha.myshopify.com"}
+- Store Currency: ${context.currency || "INR"} (${curr})
 - Timeframe Selected: ${context.timeRange || "Today / All-time"}
 - Total Unique Visitors Tracked: ${context.totalVisitors || 0}
 - Total Sessions: ${context.totalSessions || 0}
 - Total Tracking Events: ${context.totalEvents || 0}
 
-#### 🎯 CONVERSION FUNNEL METRICS:
+#### 🎯 LIVE CONVERSION FUNNEL:
 - Total Store Visitors: ${context.funnel?.visitors || 0} (100%)
-- Product Page (PDP) Views: ${context.funnel?.pdpViews || 0} (${context.funnel?.pdpRate || "0%"} of visitors)
+- Product Page (PDP) Views: ${context.funnel?.pdpViews || 0} (${context.funnel?.pdpRate || "0%"} discovery rate)
 - Added to Cart: ${context.funnel?.cartAdds || 0} (${context.funnel?.cartRate || "0%"} of PDP views)
 - Initiated Checkout: ${context.funnel?.checkouts || 0} (${context.funnel?.checkoutRate || "0%"} of Cart adds)
 - Completed Orders: ${context.funnel?.purchases || 0} (${context.funnel?.purchaseRate || "0%"} of Checkouts)
@@ -128,38 +130,27 @@ You have REAL-TIME access to live store tracking data, checkout funnels, product
 - Average Order Value (AOV): ${curr}${(context.metrics?.aov || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 - Total Discounts Given: ${curr}${(context.metrics?.totalDiscountsGiven || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 
-#### 🛍️ TOP COLLECTIONS & CATEGORIES:
+#### 🛍️ ACTIVE STORE PRODUCTS & PRICES:
+${context.topProducts && context.topProducts.length > 0
+  ? context.topProducts.map(p => `- ${p.title}: Price ${curr}${p.price.toLocaleString()} | Views: ${p.views} | Cart Adds: ${p.cartAdds} | Orders: ${p.orders}`).join("\n")
+  : "- Product catalog active"}
+
+#### 📿 TOP COLLECTIONS:
 ${context.topCollections && context.topCollections.length > 0
   ? context.topCollections.map(c => `- ${c.title}: ${c.views} views, ${c.addToCarts} cart adds, ${curr}${c.revenue.toFixed(2)} sales`).join("\n")
-  : "- No collection events yet or store in learning phase"}
-
-#### ⚠️ TOP TRAFFIC-LEAKING PRODUCTS (High Views, Low Purchase/Cart):
-${context.topLeakingProducts && context.topLeakingProducts.length > 0
-  ? context.topLeakingProducts.map(p => `- ${p.title}: ${p.views} views, ${p.addToCarts} adds, ${p.purchases} sales (${p.dropRate} drop)`).join("\n")
-  : "- No high-leak products identified yet"}
-
-#### 🏆 TOP WINNING PRODUCTS:
-${context.winningProducts && context.winningProducts.length > 0
-  ? context.winningProducts.map(p => `- ${p.title}: ${p.views} views, ${p.purchases} sales (CVR: ${p.convRate})`).join("\n")
-  : "- No winning products yet"}
+  : "- Catalog collections accumulating"}
 
 #### 📱 DEVICE BREAKDOWN:
 ${context.devices && context.devices.length > 0
   ? context.devices.map(d => `- ${d.device}: ${d.visitors} visitors (${d.share})`).join("\n")
-  : "- Mobile/Desktop data accumulating"}
-
-#### 🎟️ ACTIVE OFFERS & PROMOS:
-${context.offers && context.offers.length > 0
-  ? context.offers.map(o => `- Code "${o.code}": ${o.orders} orders, ${curr}${o.revenue.toFixed(2)} rev, ${curr}${o.discount.toFixed(2)} discount`).join("\n")
-  : "- No active discount promo redemptions recorded"}
+  : "- Device matrix accumulating"}
 
 ---
-### INSTRUCTIONS FOR YOUR RESPONSE:
-1. Directly, thoroughly, and intelligently answer the merchant's specific question: "${userQuery}".
-2. Ground your advice in the live store metrics and catalog data provided above whenever relevant.
-3. If they ask about pricing, marketing, collections, product leaks, or conversion rate optimization, provide concrete, actionable, and creative strategies specific to high-end jewellery e-commerce.
-4. Format your response with clear, clean Markdown headings, bullet points, and bold text for readability.
-5. NEVER repeat a canned generic template. Give an authentic, thoughtful, and expert response.
+### MANDATORY RESPONSE INSTRUCTIONS:
+1. Directly answer the merchant's question: "${userQuery}".
+2. ALWAYS explicitly cite and reference their actual store data points above (specifically their ${context.funnel?.visitors || 0} visitors, ${context.funnel?.pdpViews || 0} PDP views (${context.funnel?.pdpRate || "0%"}), ${context.funnel?.cartAdds || 0} cart adds (${context.funnel?.cartRate || "0%"}), ${context.funnel?.purchases || 0} orders, their actual product names, and current prices in ${curr}).
+3. Explain clearly what their current numbers mean for their question, and give concrete, data-backed steps (pricing tiers, bundles, cart recovery, page fixes) based on their specific situation.
+4. Structure your response with clean Markdown headings and concise bullet points.
 
 Merchant's Question: "${userQuery}"`;
 }

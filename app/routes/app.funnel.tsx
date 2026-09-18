@@ -1167,6 +1167,14 @@ I am your autonomous e-commerce growth analyst powered by **Gemini 3.5 Flash**. 
           aov: funnelMetrics.orders > 0 ? (totalRev / funnelMetrics.orders) : 0,
           totalDiscountsGiven: totalDisc,
         },
+        topProducts: productAnalytics.slice(0, 15).map(p => ({
+          title: p.title,
+          price: p.price,
+          views: p.views,
+          cartAdds: p.cartAdds,
+          orders: p.orders,
+          cartRate: `${p.cartRate}%`
+        })),
         topCollections: collectionAnalytics.slice(0, 5).map(c => ({
           title: c.name,
           views: c.views,
