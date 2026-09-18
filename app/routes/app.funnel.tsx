@@ -352,23 +352,6 @@ function PaginationControls({
 
   if (totalItems <= pageSize && currentPage === 1) return null;
 
-  
-  const paginatedProducts = useMemo(() => {
-    return productAnalytics.slice((productPage - 1) * PAGE_SIZE, productPage * PAGE_SIZE);
-  }, [productAnalytics, productPage]);
-
-  const paginatedCollections = useMemo(() => {
-    return collectionAnalytics.slice((collectionPage - 1) * PAGE_SIZE, collectionPage * PAGE_SIZE);
-  }, [collectionAnalytics, collectionPage]);
-
-  const paginatedOffers = useMemo(() => {
-    return offerAnalytics.slice((offerPage - 1) * PAGE_SIZE, offerPage * PAGE_SIZE);
-  }, [offerAnalytics, offerPage]);
-
-  const paginatedCampaigns = useMemo(() => {
-    return campaignAnalytics.slice((campaignPage - 1) * PAGE_SIZE, campaignPage * PAGE_SIZE);
-  }, [campaignAnalytics, campaignPage]);
-
   return (
     <div
       style={{
@@ -1285,6 +1268,22 @@ export default function FunnelAnalyticsRoute() {
       console.error("Export Products CSV Error:", e);
     }
   };
+
+  const paginatedProducts = useMemo(() => {
+    return (productAnalytics || []).slice((productPage - 1) * PAGE_SIZE, productPage * PAGE_SIZE);
+  }, [productAnalytics, productPage]);
+
+  const paginatedCollections = useMemo(() => {
+    return (collectionAnalytics || []).slice((collectionPage - 1) * PAGE_SIZE, collectionPage * PAGE_SIZE);
+  }, [collectionAnalytics, collectionPage]);
+
+  const paginatedOffers = useMemo(() => {
+    return (offerAnalytics || []).slice((offerPage - 1) * PAGE_SIZE, offerPage * PAGE_SIZE);
+  }, [offerAnalytics, offerPage]);
+
+  const paginatedCampaigns = useMemo(() => {
+    return (campaignAnalytics || []).slice((campaignPage - 1) * PAGE_SIZE, campaignPage * PAGE_SIZE);
+  }, [campaignAnalytics, campaignPage]);
 
   return (
     <Page fullWidth>
