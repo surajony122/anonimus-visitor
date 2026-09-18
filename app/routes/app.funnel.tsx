@@ -471,56 +471,29 @@ export default function FunnelAnalyticsRoute() {
     setIsMetaModalOpen(false);
   };
 
+  const [productPage, setProductPage] = useState(1);
+  const [collectionPage, setCollectionPage] = useState(1);
+  const [campaignPage, setCampaignPage] = useState(1);
+  const [offerPage, setOfferPage] = useState(1);
+  const PAGE_SIZE = 100;
+
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       revalidator.revalidate();
     }, 15000);
-    // 📊 Multi-Format CSV Exports
-  const handleExportFunnelCSV = () => {
-    const totalRev = shopifyOrders.reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0);
-    const headers = ["Metric", "Value", "Conversion_Rate", "Description"];
-    const rows = [
-      ["Storefront Visitors", funnelMetrics.landings, "100%", "Total unique shoppers tracked on store"],
-      ["Product Page Views (PDP)", funnelMetrics.productViews, funnelMetrics.pdpRate, "Shoppers who explored product detail pages"],
-      ["Cart Additions", funnelMetrics.cartAdds, funnelMetrics.cartRate, "Shoppers who added items to bag"],
-      ["Checkouts Initiated", funnelMetrics.checkouts, funnelMetrics.checkoutRate, "Shoppers who started checkout"],
-      ["Completed Orders", funnelMetrics.orders, funnelMetrics.orderRate, "Shoppers who completed paid purchase"],
-      ["Gross Revenue", `${currency} ${totalRev.toFixed(2)}`, "-", "Total order revenue recorded"],
-      ["Average Order Value (AOV)", `${currency} ${funnelMetrics.orders > 0 ? (totalRev / funnelMetrics.orders).toFixed(2) : "0.00"}`, "-", "Average order value per paying customer"],
-    ];
-    const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
-    const link = document.createElement("a");
-    link.href = encodeURI(csv);
-    link.download = `nitro_funnel_analytics_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
-  const handleExportProductsCSV = () => {
-    const headers = ["Product_Title", "Price", "Page_Views", "Cart_Adds", "Completed_Orders", "Cart_Rate", "Status"];
-    const rows = productAnalytics.map(p => [
-      p.title,
-      p.price,
-      p.views,
-      p.cartAdds,
-      p.orders,
-      `${p.cartRate}%`,
-      p.status
-    ]);
-    const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
-    const link = document.createElement("a");
-    link.href = encodeURI(csv);
-    link.download = `nitro_product_analytics_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  return () => clearInterval(interval);
+    return () => clearInterval(interval);
   }, [autoRefresh, revalidator]);
+
+  // Reset pagination when active tab or filters change
+  useEffect(() => {
+    setProductPage(1);
+    setCollectionPage(1);
+    setCampaignPage(1);
+    setOfferPage(1);
+  }, [activeTab, timeFilter, searchQuery, productTierFilter, campaignTierFilter]);
 
   // Filter events by Time Range
   const filteredEvents = useMemo(() => {
@@ -1261,7 +1234,55 @@ export default function FunnelAnalyticsRoute() {
     });
   }, [sessions, filteredEvents]);
 
+  // 📊 Multi-Format CSV Exports
+  const handleExportFunnelCSV = () => {
+    try {
+      const totalRev = (shopifyOrders || []).reduce((acc: number, o: any) => acc + (parseFloat(o.totalPriceSet?.shopMoney?.amount) || 0), 0);
+      const headers = ["Metric", "Value", "Conversion_Rate", "Description"];
+      const rows = [
+        ["Storefront Visitors", funnelMetrics?.landings || 0, "100%", "Total unique shoppers tracked on store"],
+        ["Product Page Views (PDP)", funnelMetrics?.productViews || 0, funnelMetrics?.pdpRate || "0%", "Shoppers who explored product detail pages"],
+        ["Cart Additions", funnelMetrics?.cartAdds || 0, funnelMetrics?.cartRate || "0%", "Shoppers who added items to bag"],
+        ["Checkouts Initiated", funnelMetrics?.checkouts || 0, funnelMetrics?.checkoutRate || "0%", "Shoppers who started checkout"],
+        ["Completed Orders", funnelMetrics?.orders || 0, funnelMetrics?.orderRate || "0%", "Shoppers who completed paid purchase"],
+        ["Gross Revenue", `${currency} ${totalRev.toFixed(2)}`, "-", "Total order revenue recorded"],
+        ["Average Order Value (AOV)", `${currency} ${funnelMetrics?.orders > 0 ? (totalRev / funnelMetrics.orders).toFixed(2) : "0.00"}`, "-", "Average order value per paying customer"],
+      ];
+      const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`)).join(",")].join("\n");
+      const link = document.createElement("a");
+      link.href = encodeURI(csv);
+      link.download = `nitro_funnel_analytics_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error("Export Funnel CSV Error:", e);
+    }
+  };
 
+  const handleExportProductsCSV = () => {
+    try {
+      const headers = ["Product_Title", "Price", "Page_Views", "Cart_Adds", "Completed_Orders", "Cart_Rate", "Status"];
+      const rows = (productAnalytics || []).map(p => [
+        p.title,
+        p.price,
+        p.views,
+        p.cartAdds,
+        p.orders,
+        `${p.cartRate}%`,
+        p.status
+      ]);
+      const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`)).join(",")].join("\n");
+      const link = document.createElement("a");
+      link.href = encodeURI(csv);
+      link.download = `nitro_product_analytics_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error("Export Products CSV Error:", e);
+    }
+  };
 
   return (
     <Page fullWidth>
