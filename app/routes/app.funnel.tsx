@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useActionData, useLoaderData, useNavigate, useRevalidator, useSubmit } from "@remix-run/react";
+import { useActionData, useLoaderData, useNavigate, useRevalidator, useSubmit, useRouteError } from "@remix-run/react";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Page,
@@ -620,10 +620,10 @@ export default function FunnelAnalyticsRoute() {
   // Offers & Promo Codes Aggregator
   const offerAnalytics = useMemo(() => {
     const offers = [
-      { code: "JOY15", label: "Flat 15% Off Exclusive", appliedCount: 48, orders: 36, discountGiven: "₹18,400", netRevenue: "₹1,04,200", conversionRate: "75%" },
-      { code: "FLAT10", label: "Welcome 10% Off", appliedCount: 82, orders: 49, discountGiven: "₹14,200", netRevenue: "₹1,28,000", conversionRate: "60%" },
-      { code: "FESTIVE20", label: "Festive Season 20%", appliedCount: 29, orders: 21, discountGiven: "₹12,800", netRevenue: "₹51,200", conversionRate: "72%" },
-      { code: "FREESHIP", label: "Free Express Shipping", appliedCount: 110, orders: 84, discountGiven: "₹8,400", netRevenue: "₹2,10,000", conversionRate: "76%" },
+      { code: "JOY15", label: "Flat 15% Off Exclusive", appliedCount: 48, orders: 36, discountGiven: "₹18,400", netRevenue: "₹1,04,200", revenue: "₹1,04,200", conversionRate: "75%" },
+      { code: "FLAT10", label: "Welcome 10% Off", appliedCount: 82, orders: 49, discountGiven: "₹14,200", netRevenue: "₹1,28,000", revenue: "₹1,28,000", conversionRate: "60%" },
+      { code: "FESTIVE20", label: "Festive Season 20%", appliedCount: 29, orders: 21, discountGiven: "₹12,800", netRevenue: "₹51,200", revenue: "₹51,200", conversionRate: "72%" },
+      { code: "FREESHIP", label: "Free Express Shipping", appliedCount: 110, orders: 84, discountGiven: "₹8,400", netRevenue: "₹2,10,000", revenue: "₹2,10,000", conversionRate: "76%" },
     ];
 
     if (searchQuery) {
@@ -1871,6 +1871,50 @@ export default function FunnelAnalyticsRoute() {
           </Modal.Section>
         </Modal>
 
+      </div>
+    </Page>
+  );
+}
+
+
+export function ErrorBoundary() {
+  const error = useRouteError() as any;
+  console.error("Funnel Route Error:", error);
+
+  return (
+    <Page fullWidth>
+      <div style={{ padding: "30px", maxWidth: "800px", margin: "0 auto" }}>
+        <div style={{ background: "#fff4f4", border: "1px solid #fecaca", borderRadius: "10px", padding: "24px" }}>
+          <h2 style={{ color: "#b91c1c", margin: "0 0 10px 0", fontSize: "18px", fontWeight: 700 }}>
+            ⚠️ Funnel Analytics Encountered an Issue
+          </h2>
+          <p style={{ color: "#374151", margin: "0 0 15px 0", fontSize: "13px" }}>
+            <strong>Details:</strong> {error?.message || error?.statusText || "Unexpected rendering error"}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: "#0f172a",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              padding: "8px 16px",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            🔄 Reload Funnel Page
+          </button>
+          {error?.stack && (
+            <details style={{ marginTop: "14px" }}>
+              <summary style={{ cursor: "pointer", color: "#64748b", fontSize: "12px" }}>View Technical Stack Trace</summary>
+              <pre style={{ background: "#1f2937", color: "#f9fafb", padding: "12px", borderRadius: "6px", overflowX: "auto", fontSize: "11px", marginTop: "8px" }}>
+                {error.stack}
+              </pre>
+            </details>
+          )}
+        </div>
       </div>
     </Page>
   );
