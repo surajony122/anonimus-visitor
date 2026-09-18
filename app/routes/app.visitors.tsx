@@ -24,6 +24,35 @@ import { decryptValue } from "../services/normalizer.server";
 import { authenticate } from "../shopify.server";
 import { Icon } from "../components/Icon";
 
+function safeIso(val: any, fallback = new Date().toISOString()): string {
+  if (!val) return fallback;
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? fallback : d.toISOString();
+  } catch {
+    return fallback;
+  }
+}
+
+function safeDecrypt(val?: string | null): string {
+  if (!val) return "";
+  try {
+    return decryptValue(val);
+  } catch {
+    return "[Protected Value]";
+  }
+}
+
+function safeJson(val: any): any {
+  if (!val) return {};
+  if (typeof val === "object") return val;
+  try {
+    return JSON.parse(val);
+  } catch {
+    return {};
+  }
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const isForceRefresh = url.searchParams.get("refresh") === "true";
@@ -34,6 +63,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     if (session?.shop) shopDomain = session.shop;
   } catch (err) {
     if (err instanceof Response) throw err;
+    console.warn("Visitors loader auth notice:", err);
   }
 
   if (!isForceRefresh) {
@@ -43,8 +73,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  let visitors: any[] = [];
-  let totalCount = 0;
   try {
     const [fetchVisitors, realCount] = await Promise.all([
       prisma.visitor.findMany({
@@ -60,181 +88,192 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       prisma.visitor.count().catch(() => 0),
     ]);
 
-    visitors = fetchVisitors;
-    totalCount = realCount || visitors.length;
-  } catch (dbErr) {
-    console.warn("Visitors DB query fallback:", dbErr);
-    visitors = [];
-    totalCount = 0;
-  }
+    const visitors = fetchVisitors || [];
+    const totalCount = realCount || visitors.length;
 
-  const enriched = visitors.map((v) => {
-    let clientMeta: any = {};
-    try {
-      if (v.metadata) {
-        clientMeta = typeof v.metadata === "string" ? JSON.parse(v.metadata) : v.metadata;
-      }
-    } catch {}
+    const enriched = visitors.map((v: any) => {
+      try {
+        const clientMeta = safeJson(v.metadata);
+        const vEvents = Array.isArray(v.events) ? v.events : [];
+        const vIdentities = Array.isArray(v.identities) ? v.identities : [];
+        const vSessions = Array.isArray(v.sessions) ? v.sessions : [];
 
-    const pViews = v.events.filter((e: any) => e.eventType === "product_viewed").length;
-    const uniqueProductIds = new Set(
-      v.events
-        .filter((e: any) => e.eventType === "product_viewed" && e.productId)
-        .map((e: any) => e.productId!)
-    );
-    const repeatViews = Math.max(0, pViews - uniqueProductIds.size);
-    const cViews = v.events.filter((e: any) => e.eventType === "collection_viewed").length;
-    const searches = v.events.filter((e: any) => e.eventType === "search_submitted").length;
-    const addToCart = v.events.filter((e: any) => e.eventType === "product_added_to_cart").length;
-    const cartViews = v.events.filter((e: any) => e.eventType === "cart_viewed").length;
-    const checkouts = v.events.filter((e: any) => e.eventType === "checkout_started").length;
-    const checkoutsCompleted = v.events.filter((e: any) => e.eventType === "checkout_completed").length;
+        const pViews = vEvents.filter((e: any) => e.eventType === "product_viewed").length;
+        const uniqueProductIds = new Set(
+          vEvents
+            .filter((e: any) => e.eventType === "product_viewed" && e.productId)
+            .map((e: any) => e.productId!)
+        );
+        const repeatViews = Math.max(0, pViews - uniqueProductIds.size);
+        const cViews = vEvents.filter((e: any) => e.eventType === "collection_viewed").length;
+        const searches = vEvents.filter((e: any) => e.eventType === "search_submitted").length;
+        const addToCart = vEvents.filter((e: any) => e.eventType === "product_added_to_cart").length;
+        const cartViews = vEvents.filter((e: any) => e.eventType === "cart_viewed").length;
+        const checkouts = vEvents.filter((e: any) => e.eventType === "checkout_started").length;
+        const checkoutsCompleted = vEvents.filter((e: any) => e.eventType === "checkout_completed").length;
 
-    let cartVal = 0;
-    v.events.forEach((e: any) => {
-      if (e.metadata) {
-        try {
-          const meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
-          if (meta.cartValue || meta.price) {
-            cartVal = Math.max(cartVal, Number(meta.cartValue || meta.price || 0));
+        let cartVal = 0;
+        vEvents.forEach((e: any) => {
+          if (e.metadata) {
+            const meta = safeJson(e.metadata);
+            if (meta.cartValue || meta.price) {
+              cartVal = Math.max(cartVal, Number(meta.cartValue || meta.price || 0));
+            }
           }
+        });
+
+        let intent = { score: 10, tier: "low" as const, breakdown: { productEngagement: 0, cartActivity: 0, checkoutProgress: 0, sessionDepth: 0 } };
+        try {
+          intent = calculateIntentScore({
+            productViewsCount: pViews,
+            repeatProductViews: repeatViews,
+            collectionViewsCount: cViews,
+            searchesCount: searches,
+            addedToCartCount: addToCart,
+            cartViewedCount: cartViews,
+            cartValue: cartVal,
+            checkoutStartedCount: checkouts,
+            checkoutCompletedCount: checkoutsCompleted,
+            sessionsCount: vSessions.length || 1,
+          });
         } catch {}
+
+        const emailId = vIdentities.find((i: any) => i.identityType === "email");
+        const phoneId = vIdentities.find((i: any) => i.identityType === "phone");
+        const customer = v.customerLinks?.[0]?.customer || null;
+
+        let rawDecryptedEmail = customer?.emailReference || null;
+        const encEmail = emailId?.identityValueEncrypted || emailId?.encryptedValue;
+        if (encEmail) {
+          rawDecryptedEmail = safeDecrypt(encEmail);
+        }
+
+        let rawDecryptedPhone = customer?.phoneReference || null;
+        const encPhone = phoneId?.identityValueEncrypted || phoneId?.encryptedValue;
+        if (encPhone) {
+          rawDecryptedPhone = safeDecrypt(encPhone);
+        }
+
+        const decryptedIdentities = vIdentities.map((i: any) => {
+          const encVal = i.identityValueEncrypted || i.encryptedValue;
+          return {
+            id: i.id,
+            identityType: i.identityType,
+            value: encVal ? safeDecrypt(encVal) : "",
+            source: i.source,
+            confidenceScore: i.confidenceScore,
+            createdAt: safeIso(i.createdAt),
+          };
+        });
+
+        const parsedEvents = vEvents.map((e: any) => {
+          const meta = safeJson(e.metadata);
+          let utmSource = "";
+          let utmMedium = "";
+          let utmCampaign = "";
+          let fbclid = "";
+          let gclid = "";
+
+          try {
+            const urlStr = e.pageUrl || meta.page_url || "";
+            if (urlStr.includes("?")) {
+              const params = new URL(urlStr).searchParams;
+              utmSource = params.get("utm_source") || "";
+              utmMedium = params.get("utm_medium") || "";
+              utmCampaign = params.get("utm_campaign") || "";
+              fbclid = params.get("fbclid") || "";
+              gclid = params.get("gclid") || "";
+            }
+          } catch {}
+
+          return {
+            id: e.id || e.eventId,
+            eventType: e.eventType,
+            timestamp: safeIso(e.timestamp),
+            productId: e.productId,
+            pageUrl: e.pageUrl,
+            metadata: meta,
+            utm: {
+              utmSource,
+              utmMedium,
+              utmCampaign,
+              fbclid,
+              gclid,
+              isMetaAd: !!(fbclid || utmSource.toLowerCase().includes("meta") || utmSource.toLowerCase().includes("facebook") || utmSource.toLowerCase().includes("instagram")),
+            },
+          };
+        });
+
+        return {
+          id: v.id,
+          visitorId: v.visitorId,
+          status: decryptedIdentities.length > 0 || rawDecryptedEmail || rawDecryptedPhone ? "identified" : v.status || "anonymous",
+          firstSeenAt: safeIso(v.firstSeenAt),
+          lastSeenAt: safeIso(v.lastSeenAt),
+          deviceCategory: v.deviceCategory || clientMeta.deviceCategory || "desktop",
+          browser: clientMeta.browser || "Chrome",
+          os: clientMeta.os || "Desktop OS",
+          screenResolution: clientMeta.screenResolution || "1920x1080",
+          language: clientMeta.language || "en",
+          timezone: clientMeta.timezone || "UTC",
+          sessionsCount: vSessions.length || 1,
+          productsViewedCount: pViews,
+          cartEventsCount: addToCart,
+          cartValue: cartVal,
+          intentScore: intent.score,
+          intentTier: intent.tier,
+          intentBreakdown: intent.breakdown,
+          primaryEmail: rawDecryptedEmail,
+          primaryPhone: rawDecryptedPhone,
+          identities: decryptedIdentities,
+          events: parsedEvents,
+          customer: customer
+            ? {
+                id: customer.shopifyCustomerId,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                email: customer.emailReference,
+                phone: customer.phoneReference,
+              }
+            : null,
+        };
+      } catch (visitorMapErr) {
+        console.warn("Single visitor map error:", visitorMapErr);
+        return {
+          id: v.id || String(Math.random()),
+          visitorId: v.visitorId || "unknown",
+          status: "anonymous",
+          firstSeenAt: safeIso(v.firstSeenAt),
+          lastSeenAt: safeIso(v.lastSeenAt),
+          deviceCategory: "desktop",
+          browser: "Chrome",
+          os: "Desktop OS",
+          screenResolution: "1920x1080",
+          language: "en",
+          timezone: "UTC",
+          sessionsCount: 1,
+          productsViewedCount: 0,
+          cartEventsCount: 0,
+          cartValue: 0,
+          intentScore: 10,
+          intentTier: "low",
+          intentBreakdown: { productEngagement: 0, cartActivity: 0, checkoutProgress: 0, sessionDepth: 0 },
+          primaryEmail: null,
+          primaryPhone: null,
+          identities: [],
+          events: [],
+          customer: null,
+        };
       }
     });
 
-    const intent = calculateIntentScore({
-      productViewsCount: pViews,
-      repeatProductViews: repeatViews,
-      collectionViewsCount: cViews,
-      searchesCount: searches,
-      addedToCartCount: addToCart,
-      cartViewedCount: cartViews,
-      cartValue: cartVal,
-      checkoutStartedCount: checkouts,
-      checkoutCompletedCount: checkoutsCompleted,
-      sessionsCount: v.sessions?.length || 1,
-    });
-
-    const emailId = v.identities.find((i: any) => i.identityType === "email");
-    const phoneId = v.identities.find((i: any) => i.identityType === "phone");
-    const customer = v.customerLinks?.[0]?.customer || null;
-
-    let rawDecryptedEmail = customer?.emailReference || null;
-    const encEmail = emailId?.identityValueEncrypted || emailId?.encryptedValue;
-    if (encEmail) {
-      try {
-        rawDecryptedEmail = decryptValue(encEmail);
-      } catch {}
-    }
-
-    let rawDecryptedPhone = customer?.phoneReference || null;
-    const encPhone = phoneId?.identityValueEncrypted || phoneId?.encryptedValue;
-    if (encPhone) {
-      try {
-        rawDecryptedPhone = decryptValue(encPhone);
-      } catch {}
-    }
-
-    const decryptedIdentities = (v.identities || []).map((i: any) => {
-      let plainValue = "";
-      const encVal = i.identityValueEncrypted || i.encryptedValue;
-      if (encVal) {
-        try {
-          plainValue = decryptValue(encVal);
-        } catch {
-          plainValue = "[Protected Value]";
-        }
-      }
-      return {
-        id: i.id,
-        identityType: i.identityType,
-        value: plainValue,
-        source: i.source,
-        confidenceScore: i.confidenceScore,
-        createdAt: i.createdAt ? i.createdAt.toISOString() : new Date().toISOString(),
-      };
-    });
-
-    const parsedEvents = (v.events || []).map((e: any) => {
-      let meta: any = {};
-      try {
-        if (e.metadata) meta = typeof e.metadata === "string" ? JSON.parse(e.metadata) : e.metadata;
-      } catch {}
-
-      let utmSource = "";
-      let utmMedium = "";
-      let utmCampaign = "";
-      let fbclid = "";
-      let gclid = "";
-
-      try {
-        const urlStr = e.pageUrl || meta.page_url || "";
-        if (urlStr.includes("?")) {
-          const params = new URL(urlStr).searchParams;
-          utmSource = params.get("utm_source") || "";
-          utmMedium = params.get("utm_medium") || "";
-          utmCampaign = params.get("utm_campaign") || "";
-          fbclid = params.get("fbclid") || "";
-          gclid = params.get("gclid") || "";
-        }
-      } catch {}
-
-      return {
-        id: e.id || e.eventId,
-        eventType: e.eventType,
-        timestamp: e.timestamp ? new Date(e.timestamp).toISOString() : new Date().toISOString(),
-        productId: e.productId,
-        pageUrl: e.pageUrl,
-        metadata: meta,
-        utm: {
-          utmSource,
-          utmMedium,
-          utmCampaign,
-          fbclid,
-          gclid,
-          isMetaAd: !!(fbclid || utmSource.toLowerCase().includes("meta") || utmSource.toLowerCase().includes("facebook") || utmSource.toLowerCase().includes("instagram")),
-        },
-      };
-    });
-
-    return {
-      id: v.id,
-      visitorId: v.visitorId,
-      status: decryptedIdentities.length > 0 ? "identified" : v.status,
-      firstSeenAt: v.firstSeenAt ? new Date(v.firstSeenAt).toISOString() : new Date().toISOString(),
-      lastSeenAt: v.lastSeenAt ? new Date(v.lastSeenAt).toISOString() : new Date().toISOString(),
-      deviceCategory: v.deviceCategory || clientMeta.deviceCategory || "desktop",
-      browser: clientMeta.browser || "Chrome",
-      os: clientMeta.os || "Desktop OS",
-      screenResolution: clientMeta.screenResolution || "1920x1080",
-      language: clientMeta.language || "en",
-      timezone: clientMeta.timezone || "UTC",
-      sessionsCount: v.sessions?.length || 1,
-      productsViewedCount: pViews,
-      cartEventsCount: addToCart,
-      cartValue: cartVal,
-      intentScore: intent.score,
-      intentTier: intent.tier,
-      intentBreakdown: intent.breakdown,
-      primaryEmail: rawDecryptedEmail,
-      primaryPhone: rawDecryptedPhone,
-      identities: decryptedIdentities,
-      events: parsedEvents,
-      customer: customer
-        ? {
-            id: customer.shopifyCustomerId,
-            firstName: customer.firstName,
-            lastName: customer.lastName,
-            email: customer.emailReference,
-            phone: customer.phoneReference,
-          }
-        : null,
-    };
-  });
-
-  const result = { visitors: enriched, totalCount };
-  appCache.set("visitors_data_" + shopDomain, result, 15 * 1000);
-  return json(result);
+    const result = { visitors: enriched, totalCount };
+    appCache.set("visitors_data_" + shopDomain, result, 15 * 1000);
+    return json(result);
+  } catch (err) {
+    console.error("Visitors loader top-level error:", err);
+    return json({ visitors: [], totalCount: 0 });
+  }
 };
 
 export default function VisitorsList() {
@@ -246,6 +285,7 @@ export default function VisitorsList() {
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [intentFilter, setIntentFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -253,9 +293,11 @@ export default function VisitorsList() {
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedText(label);
-    setTimeout(() => setCopiedText(null), 2500);
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedText(label);
+      setTimeout(() => setCopiedText(null), 2500);
+    } catch {}
   };
 
   const handleManualRefresh = () => {
@@ -270,41 +312,9 @@ export default function VisitorsList() {
       revalidator.revalidate();
       setLastRefreshedAt(new Date().toLocaleTimeString());
     }, 15000);
-    const handleExportVisitorsCSV = () => {
-    const listToExport = filtered && filtered.length > 0 ? filtered : visitors;
-    if (!listToExport || listToExport.length === 0) return;
-    const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Email", "Phone", "Device", "OS", "Browser", "Cart Value", "Sessions", "First Seen", "Last Seen"];
-    const rows = listToExport.map((v: any) => [
-      v.visitorId,
-      v.status || (v.primaryEmail || v.primaryPhone ? "identified" : "anonymous"),
-      v.intentScore || 0,
-      v.intentTier || "low",
-      v.primaryEmail || "Anonymous",
-      v.primaryPhone || "Anonymous",
-      v.deviceCategory || "Mobile",
-      v.os || "Device OS",
-      v.browser || "Browser",
-      v.cartValue || 0,
-      v.sessions?.length || 1,
-      v.firstSeenAt ? new Date(v.firstSeenAt).toISOString() : "",
-      v.lastSeenAt ? new Date(v.lastSeenAt).toISOString() : "",
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [
-      headers.map(h => `"${h}"`).join(","),
-      ...rows.map(r => r.map(c => `"${String(c !== null && c !== undefined ? c : '').replace(/"/g, '""')}"`).join(","))
-    ].join("\n");
-    const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = `nitro_visitors_${statusFilter}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
-  return () => clearInterval(interval);
+    return () => clearInterval(interval);
   }, [autoRefresh, selectedVisitor, revalidator]);
-
-  const [timeFilter, setTimeFilter] = useState("all");
 
   let filtered = visitors;
   if (statusFilter === "identified") {
@@ -320,14 +330,16 @@ export default function VisitorsList() {
   if (timeFilter !== "all") {
     const now = Date.now();
     filtered = filtered.filter((v: any) => {
-      const vTime = new Date(v.lastSeenAt).getTime();
-      if (timeFilter === "today") {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        return vTime >= todayStart.getTime();
-      }
-      if (timeFilter === "24h") return now - vTime <= 24 * 3600 * 1000;
-      if (timeFilter === "7d") return now - vTime <= 7 * 24 * 3600 * 1000;
+      try {
+        const vTime = new Date(v.lastSeenAt).getTime();
+        if (timeFilter === "today") {
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          return vTime >= todayStart.getTime();
+        }
+        if (timeFilter === "24h") return now - vTime <= 24 * 3600 * 1000;
+        if (timeFilter === "7d") return now - vTime <= 7 * 24 * 3600 * 1000;
+      } catch {}
       return true;
     });
   }
@@ -336,7 +348,7 @@ export default function VisitorsList() {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(
       (v: any) =>
-        v.visitorId.toLowerCase().includes(q) ||
+        (v.visitorId && v.visitorId.toLowerCase().includes(q)) ||
         (v.primaryEmail && v.primaryEmail.toLowerCase().includes(q)) ||
         (v.primaryPhone && v.primaryPhone.includes(q)) ||
         (v.browser && v.browser.toLowerCase().includes(q)) ||
@@ -344,6 +356,37 @@ export default function VisitorsList() {
         (v.customer?.firstName && v.customer.firstName.toLowerCase().includes(q))
     );
   }
+
+  const handleExportVisitorsCSV = () => {
+    const listToExport = filtered && filtered.length > 0 ? filtered : visitors;
+    if (!listToExport || listToExport.length === 0) return;
+    const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Email", "Phone", "Device", "OS", "Browser", "Cart Value", "Sessions", "First Seen", "Last Seen"];
+    const rows = listToExport.map((v: any) => [
+      v.visitorId,
+      v.status || (v.primaryEmail || v.primaryPhone ? "identified" : "anonymous"),
+      v.intentScore || 0,
+      v.intentTier || "low",
+      v.primaryEmail || "Anonymous",
+      v.primaryPhone || "Anonymous",
+      v.deviceCategory || "Mobile",
+      v.os || "Device OS",
+      v.browser || "Browser",
+      v.cartValue || 0,
+      v.sessionsCount || 1,
+      safeIso(v.firstSeenAt),
+      safeIso(v.lastSeenAt),
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [
+      headers.map(h => `"${h}"`).join(","),
+      ...rows.map(r => r.map(c => `"${String(c !== null && c !== undefined ? c : '').replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+    const link = document.createElement("a");
+    link.href = encodeURI(csvContent);
+    link.download = `nitro_visitors_${statusFilter}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <Page
@@ -461,11 +504,11 @@ export default function VisitorsList() {
                 ? `${v.customer.firstName} ${v.customer.lastName || ""}`
                 : isIdentified && v.primaryEmail
                 ? v.primaryEmail
-                : `Anonymous #${v.visitorId.substring(0, 8)}`;
+                : `Anonymous #${(v.visitorId || "visitor").substring(0, 8)}`;
 
               return (
                 <div
-                  key={v.id}
+                  key={v.id || v.visitorId}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
@@ -499,7 +542,7 @@ export default function VisitorsList() {
                         {displayName}
                       </div>
                       <div style={{ fontSize: "11px", color: "#94a3b8" }}>
-                        ID: {v.visitorId.substring(0, 8)}...
+                        ID: {(v.visitorId || "").substring(0, 8)}...
                       </div>
                     </div>
                   </div>
@@ -560,7 +603,13 @@ export default function VisitorsList() {
 
                   {/* Last Seen */}
                   <div style={{ color: "#64748b", fontSize: "11px" }}>
-                    {new Date(v.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {(() => {
+                      try {
+                        return new Date(v.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      } catch {
+                        return "recently";
+                      }
+                    })()}
                   </div>
 
                   {/* Action */}
@@ -603,13 +652,21 @@ export default function VisitorsList() {
                 </div>
 
                 <div>
-                  <Text variant="headingSm" as="h4">Clickstream Timeline ({selectedVisitor.events.length} events)</Text>
+                  <Text variant="headingSm" as="h4">Clickstream Timeline ({(selectedVisitor.events || []).length} events)</Text>
                   <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px", maxHeight: "360px", overflowY: "auto" }}>
-                    {selectedVisitor.events.map((evt: any, idx: number) => (
+                    {(selectedVisitor.events || []).map((evt: any, idx: number) => (
                       <div key={idx} style={{ padding: "10px 14px", background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "6px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                           <Badge tone="info">{evt.eventType}</Badge>
-                          <span style={{ fontSize: "11px", color: "#94a3b8" }}>{new Date(evt.timestamp).toLocaleTimeString()}</span>
+                          <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+                            {(() => {
+                              try {
+                                return new Date(evt.timestamp).toLocaleTimeString();
+                              } catch {
+                                return "";
+                              }
+                            })()}
+                          </span>
                         </div>
                         {evt.pageUrl && <div style={{ fontSize: "11.5px", color: "#64748b", wordBreak: "break-all" }}>{evt.pageUrl}</div>}
                       </div>
@@ -634,7 +691,7 @@ export function ErrorBoundary() {
       <div style={{ padding: "30px", maxWidth: "800px", margin: "0 auto" }}>
         <div style={{ background: "#fff4f4", border: "1px solid #fecaca", borderRadius: "10px", padding: "24px" }}>
           <h2 style={{ color: "#b91c1c", margin: "0 0 10px 0", fontSize: "18px", fontWeight: 700 }}>
-            ⚠️ Storefront Visitors Loading Notice
+            ⚠️ Storefront Visitors Notice
           </h2>
           <p style={{ color: "#374151", margin: "0 0 15px 0", fontSize: "13px" }}>
             <strong>Details:</strong> {error?.message || error?.statusText || "Database reconnecting..."}
