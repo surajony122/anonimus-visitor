@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, useRevalidator, useRouteError } from "@remix-run/react";
+import { useLoaderData, useNavigate, useRevalidator, useRouteError, useSearchParams } from "@remix-run/react";
 import React, { useState, useEffect } from "react";
 import {
   Page,
@@ -13,9 +13,6 @@ import {
   Text,
   ButtonGroup,
   Modal,
-  Divider,
-  ProgressBar,
-  Banner,
 } from "@shopify/polaris";
 import prisma from "../db.server";
 import { appCache } from "../services/cache.server";
@@ -57,6 +54,13 @@ function safeJson(val: any): any {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const isForceRefresh = url.searchParams.get("refresh") === "true";
+  const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+  const limit = Math.min(100, Math.max(10, parseInt(url.searchParams.get("limit") || "50", 10)));
+  const statusParam = url.searchParams.get("status") || "all";
+  const timeParam = url.searchParams.get("time") || "all";
+  const intentParam = url.searchParams.get("intent") || "all";
+  const queryParam = (url.searchParams.get("q") || "").trim();
+
   let shopDomain = "theunniyarcha.myshopify.com";
 
   try {
@@ -67,32 +71,97 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     console.warn("Visitors loader auth notice:", err);
   }
 
+  const cacheKey = `visitors_${shopDomain}_p${page}_l${limit}_s${statusParam}_t${timeParam}_i${intentParam}_q${queryParam}`;
   if (!isForceRefresh) {
-    const cached = appCache.get("visitors_data_" + shopDomain);
+    const cached = appCache.get(cacheKey);
     if (cached) {
       return json(cached);
     }
   }
 
   try {
-    const [fetchVisitors, realCount] = await Promise.all([
+    const where: any = {};
+
+    if (statusParam === "identified") {
+      where.status = "identified";
+    } else if (statusParam === "anonymous") {
+      where.status = "anonymous";
+    }
+
+    if (timeParam === "today") {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      where.lastSeenAt = { gte: todayStart };
+    } else if (timeParam === "24h") {
+      where.lastSeenAt = { gte: new Date(Date.now() - 24 * 3600 * 1000) };
+    } else if (timeParam === "7d") {
+      where.lastSeenAt = { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) };
+    }
+
+    if (queryParam) {
+      where.visitorId = { contains: queryParam, mode: "insensitive" };
+    }
+
+    const [realCount, fetchVisitors] = await Promise.all([
+      prisma.visitor.count({ where }).catch(() => 0),
       prisma.visitor.findMany({
-        take: 300,
-        include: {
-          sessions: { orderBy: { startedAt: "desc" }, take: 5 },
-          events: { orderBy: { timestamp: "desc" }, take: 15 },
-          identities: true,
-          customerLinks: { include: { customer: true } },
-        },
+        where,
+        take: limit,
+        skip: (page - 1) * limit,
         orderBy: { lastSeenAt: "desc" },
+        select: {
+          id: true,
+          visitorId: true,
+          status: true,
+          firstSeenAt: true,
+          lastSeenAt: true,
+          deviceCategory: true,
+          metadata: true,
+          identities: {
+            select: {
+              id: true,
+              identityType: true,
+              identityValueEncrypted: true,
+              source: true,
+              confidenceScore: true,
+              createdAt: true,
+            },
+          },
+          customerLinks: {
+            take: 1,
+            select: {
+              customer: {
+                select: {
+                  shopifyCustomerId: true,
+                  firstName: true,
+                  lastName: true,
+                  emailReference: true,
+                  phoneReference: true,
+                },
+              },
+            },
+          },
+          events: {
+            take: 15,
+            orderBy: { timestamp: "desc" },
+            select: {
+              id: true,
+              eventType: true,
+              timestamp: true,
+              productId: true,
+              pageUrl: true,
+              metadata: true,
+            },
+          },
+          sessions: {
+            take: 3,
+            select: { id: true, startedAt: true },
+          },
+        },
       }).catch(() => []),
-      prisma.visitor.count().catch(() => 0),
     ]);
 
-    const visitors = fetchVisitors || [];
-    const totalCount = realCount || visitors.length;
-
-    const enriched = visitors.map((v: any) => {
+    const enriched = fetchVisitors.map((v: any) => {
       try {
         const clientMeta = safeJson(v.metadata);
         const vEvents = Array.isArray(v.events) ? v.events : [];
@@ -144,28 +213,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const customer = v.customerLinks?.[0]?.customer || null;
 
         let rawDecryptedEmail = customer?.emailReference || null;
-        const encEmail = emailId?.identityValueEncrypted || emailId?.encryptedValue;
-        if (encEmail) {
-          rawDecryptedEmail = safeDecrypt(encEmail);
+        if (emailId?.identityValueEncrypted) {
+          rawDecryptedEmail = safeDecrypt(emailId.identityValueEncrypted);
         }
 
         let rawDecryptedPhone = customer?.phoneReference || null;
-        const encPhone = phoneId?.identityValueEncrypted || phoneId?.encryptedValue;
-        if (encPhone) {
-          rawDecryptedPhone = safeDecrypt(encPhone);
+        if (phoneId?.identityValueEncrypted) {
+          rawDecryptedPhone = safeDecrypt(phoneId.identityValueEncrypted);
         }
 
-        const decryptedIdentities = vIdentities.map((i: any) => {
-          const encVal = i.identityValueEncrypted || i.encryptedValue;
-          return {
-            id: i.id,
-            identityType: i.identityType,
-            value: encVal ? safeDecrypt(encVal) : "",
-            source: i.source,
-            confidenceScore: i.confidenceScore,
-            createdAt: safeIso(i.createdAt),
-          };
-        });
+        const decryptedIdentities = vIdentities.map((i: any) => ({
+          id: i.id,
+          identityType: i.identityType,
+          value: i.identityValueEncrypted ? safeDecrypt(i.identityValueEncrypted) : "",
+          source: i.source,
+          confidenceScore: i.confidenceScore,
+          createdAt: safeIso(i.createdAt),
+        }));
 
         const parsedEvents = vEvents.map((e: any) => {
           const meta = safeJson(e.metadata);
@@ -188,7 +252,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           } catch {}
 
           return {
-            id: e.id || e.eventId,
+            id: e.id,
             eventType: e.eventType,
             timestamp: safeIso(e.timestamp),
             productId: e.productId,
@@ -238,11 +302,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               }
             : null,
         };
-      } catch (visitorMapErr) {
-        console.warn("Single visitor map error:", visitorMapErr);
+      } catch (e) {
         return {
-          id: v.id || String(Math.random()),
-          visitorId: v.visitorId || "unknown",
+          id: v.id,
+          visitorId: v.visitorId,
           status: "anonymous",
           firstSeenAt: safeIso(v.firstSeenAt),
           lastSeenAt: safeIso(v.lastSeenAt),
@@ -268,38 +331,70 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
     });
 
-    const result = { visitors: enriched, totalCount };
-    appCache.set("visitors_data_" + shopDomain, result, 15 * 1000);
+    let finalVisitors = enriched;
+    if (intentParam !== "all") {
+      finalVisitors = finalVisitors.filter((v) => v.intentTier === intentParam);
+    }
+
+    const totalCount = realCount || finalVisitors.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
+    const result = {
+      visitors: finalVisitors,
+      totalCount,
+      page,
+      limit,
+      totalPages,
+      filters: { status: statusParam, time: timeParam, intent: intentParam, q: queryParam },
+    };
+
+    appCache.set(cacheKey, result, 15 * 1000);
     return json(result);
   } catch (err) {
-    console.error("Visitors loader top-level error:", err);
-    return json({ visitors: [], totalCount: 0 });
+    console.error("Visitors loader error:", err);
+    return json({
+      visitors: [],
+      totalCount: 0,
+      page: 1,
+      limit: 50,
+      totalPages: 1,
+      filters: { status: "all", time: "all", intent: "all", q: "" },
+    });
   }
 };
 
 export default function VisitorsList() {
   const data = useLoaderData<typeof loader>();
   const visitors = data?.visitors || [];
+  const totalCount = data?.totalCount || 0;
+  const page = data?.page || 1;
+  const totalPages = data?.totalPages || 1;
+  const limit = data?.limit || 50;
+  const filters = data?.filters || { status: "all", time: "all", intent: "all", q: "" };
+
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const isRefreshing = revalidator.state === "loading";
   const [isPending, startTransition] = React.useTransition();
 
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [intentFilter, setIntentFilter] = useState("all");
-  const [timeFilter, setTimeFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(filters.q || "");
   const [selectedVisitor, setSelectedVisitor] = useState<any | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>("just now");
-  const [copiedText, setCopiedText] = useState<string | null>(null);
 
-  const copyToClipboard = (text: string, label: string) => {
-    try {
-      navigator.clipboard.writeText(text);
-      setCopiedText(label);
-      setTimeout(() => setCopiedText(null), 2500);
-    } catch {}
+  const updateFilters = (newParams: Record<string, string>) => {
+    startTransition(() => {
+      const sp = new URLSearchParams(searchParams);
+      Object.entries(newParams).forEach(([k, v]) => {
+        if (!v || v === "all" || (k === "page" && v === "1")) {
+          sp.delete(k);
+        } else {
+          sp.set(k, v);
+        }
+      });
+      navigate(`?${sp.toString()}`);
+    });
   };
 
   const handleManualRefresh = () => {
@@ -318,52 +413,10 @@ export default function VisitorsList() {
     return () => clearInterval(interval);
   }, [autoRefresh, selectedVisitor, revalidator]);
 
-  let filtered = visitors;
-  if (statusFilter === "identified") {
-    filtered = filtered.filter((v: any) => v.status === "identified" || Boolean(v.primaryEmail) || Boolean(v.primaryPhone) || Boolean(v.customer));
-  } else if (statusFilter === "anonymous") {
-    filtered = filtered.filter((v: any) => v.status === "anonymous" && !v.primaryEmail && !v.primaryPhone && !v.customer);
-  }
-
-  if (intentFilter !== "all") {
-    filtered = filtered.filter((v: any) => v.intentTier === intentFilter);
-  }
-
-  if (timeFilter !== "all") {
-    const now = Date.now();
-    filtered = filtered.filter((v: any) => {
-      try {
-        const vTime = new Date(v.lastSeenAt).getTime();
-        if (timeFilter === "today") {
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
-          return vTime >= todayStart.getTime();
-        }
-        if (timeFilter === "24h") return now - vTime <= 24 * 3600 * 1000;
-        if (timeFilter === "7d") return now - vTime <= 7 * 24 * 3600 * 1000;
-      } catch {}
-      return true;
-    });
-  }
-
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(
-      (v: any) =>
-        (v.visitorId && v.visitorId.toLowerCase().includes(q)) ||
-        (v.primaryEmail && v.primaryEmail.toLowerCase().includes(q)) ||
-        (v.primaryPhone && v.primaryPhone.includes(q)) ||
-        (v.browser && v.browser.toLowerCase().includes(q)) ||
-        (v.os && v.os.toLowerCase().includes(q)) ||
-        (v.customer?.firstName && v.customer.firstName.toLowerCase().includes(q))
-    );
-  }
-
   const handleExportVisitorsCSV = () => {
-    const listToExport = filtered && filtered.length > 0 ? filtered : visitors;
-    if (!listToExport || listToExport.length === 0) return;
+    if (!visitors || visitors.length === 0) return;
     const headers = ["Visitor ID", "Status", "Intent Score", "Intent Tier", "Email", "Phone", "Device", "OS", "Browser", "Cart Value", "Sessions", "First Seen", "Last Seen"];
-    const rows = listToExport.map((v: any) => [
+    const rows = visitors.map((v: any) => [
       v.visitorId,
       v.status || (v.primaryEmail || v.primaryPhone ? "identified" : "anonymous"),
       v.intentScore || 0,
@@ -384,11 +437,14 @@ export default function VisitorsList() {
     ].join("\n");
     const link = document.createElement("a");
     link.href = encodeURI(csvContent);
-    link.download = `nitro_visitors_${statusFilter}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `nitro_visitors_${filters.status}_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  const startIdx = totalCount === 0 ? 0 : (page - 1) * limit + 1;
+  const endIdx = Math.min(page * limit, totalCount);
 
   return (
     <Page
@@ -399,10 +455,10 @@ export default function VisitorsList() {
           <span>Storefront Visitors</span>
         </InlineStack>
       }
-      subtitle={`Displaying ${filtered.length} active shoppers tracked across the store`}
+      subtitle={`Displaying ${startIdx}-${endIdx} of ${totalCount.toLocaleString()} shoppers tracked`}
       secondaryActions={[
         {
-          content: "📥 Export All Visitors (CSV)",
+          content: "📥 Export Page (CSV)",
           onAction: handleExportVisitorsCSV,
         },
         {
@@ -421,24 +477,30 @@ export default function VisitorsList() {
       ]}
     >
       <BlockStack gap="400">
-        {/* Filters */}
+        {/* Filters Bar */}
         <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: "220px" }}>
             <TextField
               label=""
-              placeholder="Search visitor ID, email, phone, OS, browser..."
+              placeholder="Search visitor ID, email, phone, OS..."
               value={searchQuery}
-              onChange={(val) => startTransition(() => setSearchQuery(val))}
+              onChange={(val) => {
+                setSearchQuery(val);
+                updateFilters({ q: val, page: "1" });
+              }}
               autoComplete="off"
               clearButton
-              onClearButtonClick={() => setSearchQuery("")}
+              onClearButtonClick={() => {
+                setSearchQuery("");
+                updateFilters({ q: "", page: "1" });
+              }}
             />
           </div>
 
           <ButtonGroup variant="segmented">
-            <Button pressed={statusFilter === "all"} onClick={() => startTransition(() => setStatusFilter("all"))}>All</Button>
-            <Button pressed={statusFilter === "identified"} onClick={() => startTransition(() => setStatusFilter("identified"))}>Identified</Button>
-            <Button pressed={statusFilter === "anonymous"} onClick={() => startTransition(() => setStatusFilter("anonymous"))}>Anonymous</Button>
+            <Button pressed={filters.status === "all"} onClick={() => updateFilters({ status: "all", page: "1" })}>All</Button>
+            <Button pressed={filters.status === "identified"} onClick={() => updateFilters({ status: "identified", page: "1" })}>Identified</Button>
+            <Button pressed={filters.status === "anonymous"} onClick={() => updateFilters({ status: "anonymous", page: "1" })}>Anonymous</Button>
           </ButtonGroup>
 
           <div style={{ width: "160px" }}>
@@ -451,8 +513,8 @@ export default function VisitorsList() {
                 { label: "Medium Intent", value: "medium" },
                 { label: "Low Intent", value: "low" },
               ]}
-              value={intentFilter}
-              onChange={(val) => startTransition(() => setIntentFilter(val))}
+              value={filters.intent}
+              onChange={(val) => updateFilters({ intent: val, page: "1" })}
             />
           </div>
 
@@ -465,166 +527,231 @@ export default function VisitorsList() {
                 { label: "Last 24 Hours", value: "24h" },
                 { label: "Last 7 Days", value: "7d" },
               ]}
-              value={timeFilter}
-              onChange={(val) => startTransition(() => setTimeFilter(val))}
+              value={filters.time}
+              onChange={(val) => updateFilters({ time: val, page: "1" })}
             />
           </div>
         </div>
 
-        {/* Uniform Table matching Main Dashboard */}
-        <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
-            gap: "12px",
-            padding: "10px 16px",
-            background: "#faf9f6",
-            borderBottom: "1px solid #e2e8f0",
-            fontSize: "11px",
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "#64748b",
-            fontWeight: 600,
-          }}>
-            <div>Visitor / Lead</div>
-            <div>Device &amp; OS</div>
-            <div>Captured Contact</div>
-            <div>Intent Score</div>
-            <div>Browsing &amp; Cart</div>
-            <div>Last Seen</div>
-            <div style={{ textAlign: "right" }}>Action</div>
-          </div>
-
-          {filtered.length === 0 ? (
-            <div style={{ padding: "48px 16px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
-              No visitor records match this filter. Use the Simulator to pump live test traffic.
+        {/* Table & Pagination */}
+        {isPending || isRefreshing ? (
+          <SkeletonTable
+            rows={8}
+            columns={7}
+            columnTemplate="minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px"
+          />
+        ) : (
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
+              gap: "12px",
+              padding: "10px 16px",
+              background: "#faf9f6",
+              borderBottom: "1px solid #e2e8f0",
+              fontSize: "11px",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "#64748b",
+              fontWeight: 600,
+            }}>
+              <div>Visitor / Lead</div>
+              <div>Device & OS</div>
+              <div>Captured Contact</div>
+              <div>Intent Score</div>
+              <div>Browsing & Cart</div>
+              <div>Last Seen</div>
+              <div style={{ textAlign: "right" }}>Action</div>
             </div>
-          ) : (
-            filtered.map((v: any) => {
-              const isIdentified = v.status === "identified" || v.primaryEmail || v.primaryPhone;
-              const displayName = v.customer?.firstName
-                ? `${v.customer.firstName} ${v.customer.lastName || ""}`
-                : isIdentified && v.primaryEmail
-                ? v.primaryEmail
-                : `Anonymous #${(v.visitorId || "visitor").substring(0, 8)}`;
 
-              return (
-                <div
-                  key={v.id || v.visitorId}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
-                    gap: "12px",
-                    padding: "12px 16px",
-                    alignItems: "center",
-                    borderBottom: "1px solid #f1f5f9",
-                    background: "#ffffff",
-                    fontSize: "12px",
-                  }}
-                >
-                  {/* Lead Info */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
-                    <div style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "50%",
-                      background: isIdentified ? "linear-gradient(135deg, #10b981 0%, #059669 100%)" : "#f1f5f9",
-                      color: isIdentified ? "#ffffff" : "#64748b",
-                      display: "flex",
+            {visitors.length === 0 ? (
+              <div style={{ padding: "48px 16px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+                No visitor records match this filter in the database.
+              </div>
+            ) : (
+              visitors.map((v: any) => {
+                const isIdentified = v.status === "identified" || v.primaryEmail || v.primaryPhone;
+                const displayName = v.customer?.firstName
+                  ? `${v.customer.firstName} ${v.customer.lastName || ""}`
+                  : isIdentified && v.primaryEmail
+                  ? v.primaryEmail
+                  : `Anonymous #${(v.visitorId || "visitor").substring(0, 8)}`;
+
+                return (
+                  <div
+                    key={v.id || v.visitorId}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(220px, 1.6fr) 150px 170px 120px 140px 90px 110px",
+                      gap: "12px",
+                      padding: "12px 16px",
                       alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: 700,
+                      borderBottom: "1px solid #f1f5f9",
+                      background: "#ffffff",
                       fontSize: "12px",
-                      flex: "none",
-                    }}>
-                      {isIdentified ? "👤" : "🕶️"}
+                    }}
+                  >
+                    {/* Lead Info */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                      <div style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        background: isIdentified ? "linear-gradient(135deg, #10b981 0%, #059669 100%)" : "#f1f5f9",
+                        color: isIdentified ? "#ffffff" : "#64748b",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        flex: "none",
+                      }}>
+                        {isIdentified ? "👤" : "🕶️"}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {displayName}
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                          ID: {(v.visitorId || "").substring(0, 8)}...
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {displayName}
+
+                    {/* Device & OS */}
+                    <div>
+                      <div style={{ fontWeight: 500, color: "#334155" }}>
+                        {v.deviceCategory === "mobile" ? "📱 Mobile" : "💻 Desktop"}
                       </div>
                       <div style={{ fontSize: "11px", color: "#94a3b8" }}>
-                        ID: {(v.visitorId || "").substring(0, 8)}...
+                        {v.os} • {v.browser}
                       </div>
                     </div>
-                  </div>
 
-                  {/* Device & OS */}
-                  <div>
-                    <div style={{ fontWeight: 500, color: "#334155" }}>
-                      {v.deviceCategory === "mobile" ? "📱 Mobile" : "💻 Desktop"}
+                    {/* Captured Contact */}
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {v.primaryEmail ? (
+                        <div style={{ color: "#059669", fontWeight: 600, fontSize: "11.5px" }}>
+                          ✉️ {v.primaryEmail}
+                        </div>
+                      ) : v.primaryPhone ? (
+                        <div style={{ color: "#059669", fontWeight: 600, fontSize: "11.5px" }}>
+                          📞 {v.primaryPhone}
+                        </div>
+                      ) : (
+                        <span style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "11.5px" }}>
+                          Unidentified
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>
-                      {v.os} • {v.browser}
-                    </div>
-                  </div>
 
-                  {/* Captured Contact */}
-                  <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {v.primaryEmail ? (
-                      <div style={{ color: "#059669", fontWeight: 600, fontSize: "11.5px" }}>
-                        ✉️ {v.primaryEmail}
-                      </div>
-                    ) : v.primaryPhone ? (
-                      <div style={{ color: "#059669", fontWeight: 600, fontSize: "11.5px" }}>
-                        📞 {v.primaryPhone}
-                      </div>
-                    ) : (
-                      <span style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "11.5px" }}>
-                        Unidentified
+                    {/* Intent Score */}
+                    <div>
+                      <span style={{
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: "12px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        background: v.intentScore >= 70 ? "#dcfce7" : v.intentScore >= 40 ? "#fef3c7" : "#f1f5f9",
+                        color: v.intentScore >= 70 ? "#166534" : v.intentScore >= 40 ? "#92400e" : "#475569",
+                      }}>
+                        {v.intentScore}/100 ({v.intentTier})
                       </span>
-                    )}
-                  </div>
-
-                  {/* Intent Score */}
-                  <div>
-                    <span style={{
-                      display: "inline-block",
-                      padding: "2px 8px",
-                      borderRadius: "12px",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      background: v.intentScore >= 70 ? "#dcfce7" : v.intentScore >= 40 ? "#fef3c7" : "#f1f5f9",
-                      color: v.intentScore >= 70 ? "#166534" : v.intentScore >= 40 ? "#92400e" : "#475569",
-                    }}>
-                      {v.intentScore}/100 ({v.intentTier})
-                    </span>
-                  </div>
-
-                  {/* Browsing & Cart */}
-                  <div>
-                    <div style={{ fontWeight: 600, color: "#334155" }}>
-                      {v.productsViewedCount} PDPs • {v.cartEventsCount} Carts
                     </div>
-                    {v.cartValue > 0 && (
-                      <div style={{ fontSize: "11px", color: "#f59e0b", fontWeight: 700 }}>
-                        ₹{v.cartValue.toLocaleString()} in bag
+
+                    {/* Browsing & Cart */}
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#334155" }}>
+                        {v.productsViewedCount} PDPs • {v.cartEventsCount} Carts
                       </div>
-                    )}
-                  </div>
+                      {v.cartValue > 0 && (
+                        <div style={{ fontSize: "11px", color: "#f59e0b", fontWeight: 700 }}>
+                          ₹{v.cartValue.toLocaleString()} in bag
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Last Seen */}
-                  <div style={{ color: "#64748b", fontSize: "11px" }}>
-                    {(() => {
-                      try {
-                        return new Date(v.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      } catch {
-                        return "recently";
-                      }
-                    })()}
-                  </div>
+                    {/* Last Seen */}
+                    <div style={{ color: "#64748b", fontSize: "11px" }}>
+                      {(() => {
+                        try {
+                          return new Date(v.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        } catch {
+                          return "recently";
+                        }
+                      })()}
+                    </div>
 
-                  {/* Action */}
-                  <div style={{ textAlign: "right" }}>
-                    <Button size="micro" onClick={() => setSelectedVisitor(v)}>
-                      Inspect Journey
-                    </Button>
+                    {/* Action */}
+                    <div style={{ textAlign: "right" }}>
+                      <Button size="micro" onClick={() => setSelectedVisitor(v)}>
+                        Inspect Journey
+                      </Button>
+                    </div>
                   </div>
+                );
+              })
+            )}
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "12px 16px",
+                background: "#fafaf9",
+                borderTop: "1px solid #e2e8f0",
+                fontSize: "12px",
+                color: "#64748b",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}>
+                <div>
+                  Showing <strong>{startIdx}</strong> - <strong>{endIdx}</strong> of <strong>{totalCount.toLocaleString()}</strong> shoppers
                 </div>
-              );
-            })
-          )}
-        </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <button
+                    onClick={() => updateFilters({ page: String(page - 1) })}
+                    disabled={page <= 1}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      background: page <= 1 ? "#f1f5f9" : "#ffffff",
+                      color: page <= 1 ? "#94a3b8" : "#334155",
+                      cursor: page <= 1 ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      fontSize: "12px",
+                    }}
+                  >
+                    ◀ Previous 50
+                  </button>
+                  <span style={{ fontWeight: 600, color: "#1e293b", fontSize: "12px" }}>
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => updateFilters({ page: String(page + 1) })}
+                    disabled={page >= totalPages}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      background: page >= totalPages ? "#f1f5f9" : "#ffffff",
+                      color: page >= totalPages ? "#94a3b8" : "#334155",
+                      cursor: page >= totalPages ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      fontSize: "12px",
+                    }}
+                  >
+                    Next 50 ▶
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Modal: Visitor Clickstream Journey */}
         {selectedVisitor && (

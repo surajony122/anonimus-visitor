@@ -75,6 +75,9 @@ model Visitor {
   @@index([shopId, visitorId])
   @@index([shopId, status])
   @@index([shopId, lastSeenAt])
+  @@index([lastSeenAt])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model StorefrontSession {
@@ -97,6 +100,7 @@ model StorefrontSession {
 
   @@index([shopId, visitorId])
   @@index([shopId, startedAt])
+  @@index([startedAt])
 }
 
 model Event {
@@ -123,6 +127,10 @@ model Event {
   @@index([shopId, timestamp])
   @@index([eventType, timestamp])
   @@index([visitorId, timestamp])
+  @@index([eventType])
+  @@index([productId])
+  @@index([collectionId])
+  @@index([timestamp])
 }
 
 model Identity {

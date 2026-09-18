@@ -36,6 +36,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     if (!isForceRefresh) {
       const cached = appCache.get("funnel_data_" + shopDomain);
+      if (cached) return json(cached);
       if (cached) {
         return json(cached);
       }
