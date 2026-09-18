@@ -260,7 +260,7 @@ export default function FunnelAnalyticsRoute() {
 
   // Navigation & View Filters
   const [activeTab, setActiveTab] = useState<"copilot" | "funnel" | "products" | "campaigns" | "collections" | "offers" | "devices">("copilot");
-  const [timeFilter, setTimeFilter] = useState("7d");
+  const [timeFilter, setTimeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [productTierFilter, setProductTierFilter] = useState("all");
   const [campaignTierFilter, setCampaignTierFilter] = useState("all");
