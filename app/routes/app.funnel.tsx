@@ -102,6 +102,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             name
             myshopifyDomain
             currencyCode
+            ianaTimezone
           }
           collections(first: 50) {
             edges {
@@ -145,7 +146,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               }
             }
           }
-          orders(first: 100, reverse: true, sortKey: CREATED_AT) {
+          orders(first: 250, reverse: true, sortKey: CREATED_AT) {
             edges {
               node {
                 id
@@ -367,6 +368,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shopDomain,
     shopName,
     currency,
+    ianaTimezone: shopRecord?.timezone || "Asia/Kolkata",
     shopifyProducts,
     shopifyCollections,
     shopifyOrders,
@@ -630,63 +632,58 @@ export default function FunnelAnalyticsRoute() {
     setOfferPage(1);
   }, [activeTab, timeFilter, searchQuery, productTierFilter, campaignTierFilter]);
 
-  // Filter events by Time Range
+  const storeTimezone = loaderData?.ianaTimezone || "Asia/Kolkata";
+
+  // Filter events by Time Range matching store timezone
   const filteredEvents = useMemo(() => {
     const now = Date.now();
-    return events.filter((e: any) => {
+    const todayInTz = new Date().toLocaleDateString("en-CA", { timeZone: storeTimezone });
+    const yesterdayInTz = new Date(Date.now() - 24 * 3600 * 1000).toLocaleDateString("en-CA", { timeZone: storeTimezone });
+
+    return (events || []).filter((e: any) => {
       const eTime = new Date(e.timestamp).getTime();
+      const eventDateInTz = new Date(eTime).toLocaleDateString("en-CA", { timeZone: storeTimezone });
+
       if (timeFilter === "today") {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        return eTime >= todayStart.getTime();
+        return eventDateInTz === todayInTz || (now - eTime <= 24 * 3600 * 1000 && eventDateInTz >= todayInTz);
       }
       if (timeFilter === "yesterday") {
-        const yesterdayStart = new Date();
-        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-        yesterdayStart.setHours(0, 0, 0, 0);
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        return eTime >= yesterdayStart.getTime() && eTime < todayStart.getTime();
+        return eventDateInTz === yesterdayInTz;
       }
       if (timeFilter === "7d") return now - eTime <= 7 * 24 * 3600 * 1000;
       if (timeFilter === "30d") return now - eTime <= 30 * 24 * 3600 * 1000;
       if (timeFilter === "custom" && startDate) {
-        const sTime = new Date(`${startDate}T00:00:00`).getTime();
-        const eTimeEnd = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : new Date(`${startDate}T23:59:59.999`).getTime();
-        return eTime >= sTime && eTime <= eTimeEnd;
+        return eventDateInTz >= startDate && eventDateInTz <= (endDate || startDate);
       }
       return true;
     });
-  }, [events, timeFilter, startDate, endDate]);
+  }, [events, timeFilter, startDate, endDate, storeTimezone]);
 
-  // Filter Shopify Orders strictly by the selected Time Range
+  // Filter Shopify Orders strictly by the selected Time Range matching store timezone
   const filteredOrders = useMemo(() => {
     const now = Date.now();
+    const todayInTz = new Date().toLocaleDateString("en-CA", { timeZone: storeTimezone });
+    const yesterdayInTz = new Date(Date.now() - 24 * 3600 * 1000).toLocaleDateString("en-CA", { timeZone: storeTimezone });
+
     return (shopifyOrders || []).filter((o: any) => {
       if (!o.createdAt) return true;
       const oTime = new Date(o.createdAt).getTime();
+      const orderDateInTz = new Date(oTime).toLocaleDateString("en-CA", { timeZone: storeTimezone });
+
       if (timeFilter === "today") {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const orderDateStr = new Date(oTime).toLocaleDateString("en-US");
-        const todayDateStr = new Date().toLocaleDateString("en-US");
-        return orderDateStr === todayDateStr || oTime >= todayStart.getTime();
+        return orderDateInTz === todayInTz || (now - oTime <= 24 * 3600 * 1000 && orderDateInTz >= todayInTz);
       }
       if (timeFilter === "yesterday") {
-        const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toLocaleDateString("en-US");
-        const orderDateStr = new Date(oTime).toLocaleDateString("en-US");
-        return orderDateStr === yesterday;
+        return orderDateInTz === yesterdayInTz;
       }
       if (timeFilter === "7d") return now - oTime <= 7 * 24 * 3600 * 1000;
       if (timeFilter === "30d") return now - oTime <= 30 * 24 * 3600 * 1000;
       if (timeFilter === "custom" && startDate) {
-        const sTime = new Date(`${startDate}T00:00:00`).getTime();
-        const eTimeEnd = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : new Date(`${startDate}T23:59:59.999`).getTime();
-        return oTime >= sTime && oTime <= eTimeEnd;
+        return orderDateInTz >= startDate && orderDateInTz <= (endDate || startDate);
       }
       return true;
     });
-  }, [shopifyOrders, timeFilter, startDate, endDate]);
+  }, [shopifyOrders, timeFilter, startDate, endDate, storeTimezone]);
 
   // 1. Build Multi-Index Quick Lookup for Shopify Catalog
   const catalogMaps = useMemo(() => {
