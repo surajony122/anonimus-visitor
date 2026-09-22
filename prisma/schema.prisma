@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -15,7 +15,7 @@ model Session {
   isOnline      Boolean   @default(false)
   scope         String?
   expires       DateTime?
-  accessToken   String
+  accessToken   String    @db.Text
   userId        BigInt?
   firstName     String?
   lastName      String?
@@ -33,7 +33,7 @@ model Shop {
   accessTokenReference  String?
   installedAt           DateTime  @default(now())
   uninstalledAt         DateTime?
-  settings              String?   // JSON configuration string
+  settings              String?   @db.Text // JSON configuration string
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -60,7 +60,7 @@ model Visitor {
   firstSource    String?
   lastSource     String?
   deviceCategory String?
-  metadata       String?   // JSON
+  metadata       String?   @db.Text // JSON
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -87,8 +87,8 @@ model StorefrontSession {
   startedAt      DateTime  @default(now())
   lastActivityAt DateTime  @default(now())
   endedAt        DateTime?
-  landingPage    String?
-  referrer       String?
+  landingPage    String?   @db.Text
+  referrer       String?   @db.Text
   utmSource      String?
   utmMedium      String?
   utmCampaign    String?
@@ -111,12 +111,12 @@ model Event {
   eventId      String    @unique @default(uuid())
   eventType    String    // page_viewed, product_viewed, collection_viewed, search_submitted, cart_viewed, product_added_to_cart, checkout_started, checkout_completed
   timestamp    DateTime  @default(now())
-  pageUrl      String?
+  pageUrl      String?   @db.Text
   productId    String?
   variantId    String?
   collectionId String?
   cartId       String?
-  metadata     String?   // JSON payload
+  metadata     String?   @db.Text // JSON payload
   createdAt    DateTime  @default(now())
 
   shop         Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -139,7 +139,7 @@ model Identity {
   visitorId                String
   identityType             String    // email, phone, shopify_customer, google_account, merchant_identifier
   identityValueHash        String    // SHA-256 normalized hash
-  identityValueEncrypted   String?   // Encrypted raw value
+  identityValueEncrypted   String?   @db.Text // Encrypted raw value
   source                   String    // user_submitted, checkout, shopify_customer, google_oauth, merchant_confirmed
   confidenceScore          Int       @default(100)
   verified                 Boolean   @default(true)
@@ -214,7 +214,7 @@ model IdentityAuditLog {
   action          String    // identity_created, identity_linked, identity_merged, identity_unlinked, customer_matched, identity_deleted
   source          String
   confidence      Int       @default(100)
-  metadata        String?   // JSON details
+  metadata        String?   @db.Text // JSON details
   timestamp       DateTime  @default(now())
 
   shop            Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -243,7 +243,7 @@ model WebhookEndpoint {
   id               String               @id @default(uuid())
   shopId           String
   name             String
-  url              String
+  url              String               @db.Text
   secret           String?
   triggerOn        String               // high_intent_reached, cart_abandoned, identity_resolved, all
   isActive         Boolean              @default(true)
@@ -261,9 +261,9 @@ model WebhookDeliveryLog {
   id                String          @id @default(uuid())
   webhookEndpointId String
   eventTrigger      String
-  payload           String          // JSON payload string
+  payload           String          @db.Text // JSON payload string
   responseStatus    Int?
-  responseBody      String?
+  responseBody      String?         @db.Text
   success           Boolean         @default(true)
   timestamp         DateTime        @default(now())
 
