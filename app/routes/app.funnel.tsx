@@ -145,12 +145,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               }
             }
           }
-          orders(first: 100, reverse: true) {
+          orders(first: 100, reverse: true, sortKey: CREATED_AT) {
             edges {
               node {
                 id
                 name
                 createdAt
+                displayFinancialStatus
                 totalPriceSet {
                   shopMoney {
                     amount
@@ -162,7 +163,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                     amount
                   }
                 }
-                discountCode
                 discountApplications(first: 5) {
                   edges {
                     node {
@@ -662,21 +662,20 @@ export default function FunnelAnalyticsRoute() {
   // Filter Shopify Orders strictly by the selected Time Range
   const filteredOrders = useMemo(() => {
     const now = Date.now();
-    return shopifyOrders.filter((o: any) => {
+    return (shopifyOrders || []).filter((o: any) => {
       if (!o.createdAt) return true;
       const oTime = new Date(o.createdAt).getTime();
       if (timeFilter === "today") {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
-        return oTime >= todayStart.getTime();
+        const orderDateStr = new Date(oTime).toLocaleDateString("en-US");
+        const todayDateStr = new Date().toLocaleDateString("en-US");
+        return orderDateStr === todayDateStr || oTime >= todayStart.getTime();
       }
       if (timeFilter === "yesterday") {
-        const yesterdayStart = new Date();
-        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-        yesterdayStart.setHours(0, 0, 0, 0);
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        return oTime >= yesterdayStart.getTime() && oTime < todayStart.getTime();
+        const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toLocaleDateString("en-US");
+        const orderDateStr = new Date(oTime).toLocaleDateString("en-US");
+        return orderDateStr === yesterday;
       }
       if (timeFilter === "7d") return now - oTime <= 7 * 24 * 3600 * 1000;
       if (timeFilter === "30d") return now - oTime <= 30 * 24 * 3600 * 1000;
