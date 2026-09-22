@@ -20,6 +20,101 @@ import { fetchMetaCampaigns } from "../services/metaEngine.server";
 import { appCache } from "../services/cache.server";
 import { SkeletonTable, SkeletonFunnel, SkeletonKpiCards } from "../components/SkeletonLoader";
 
+
+function getStoreTimezoneDateBoundaries(
+  timeFilter: string,
+  startDateStr?: string,
+  endDateStr?: string,
+  timeZone = "Asia/Kolkata"
+) {
+  const getStartOfDayInTz = (ymdStr: string) => {
+    const approx = new Date(`${ymdStr}T00:00:00Z`);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).formatToParts(approx);
+    const p: Record<string, string> = {};
+    parts.forEach((part) => (p[part.type] = part.value));
+    const targetInTz = new Date(`${ymdStr}T00:00:00Z`).getTime();
+    const asParsedInTz = Date.UTC(
+      parseInt(p.year),
+      parseInt(p.month) - 1,
+      parseInt(p.day),
+      parseInt(p.hour === "24" ? "00" : p.hour),
+      parseInt(p.minute),
+      parseInt(p.second)
+    );
+    const offsetMs = asParsedInTz - targetInTz;
+    return new Date(targetInTz - offsetMs);
+  };
+
+  const getEndOfDayInTz = (ymdStr: string) => {
+    const start = getStartOfDayInTz(ymdStr);
+    return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  };
+
+  const now = new Date();
+  const todayYmd = now.toLocaleDateString("en-CA", { timeZone });
+  let startBoundary: Date | null = null;
+  let endBoundary: Date | null = null;
+  let activeDateLabel = "Today";
+  let shopifyOrderQuery: string | null = null;
+
+  if (timeFilter === "today") {
+    startBoundary = getStartOfDayInTz(todayYmd);
+    endBoundary = getEndOfDayInTz(todayYmd);
+    activeDateLabel = `Today (${now.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric", year: "numeric" })})`;
+    shopifyOrderQuery = `created_at:>=${startBoundary.toISOString()}`;
+  } else if (timeFilter === "yesterday") {
+    const yestDate = new Date(Date.now() - 24 * 3600 * 1000);
+    const yestYmd = yestDate.toLocaleDateString("en-CA", { timeZone });
+    startBoundary = getStartOfDayInTz(yestYmd);
+    endBoundary = getEndOfDayInTz(yestYmd);
+    activeDateLabel = `Yesterday (${startBoundary.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric", year: "numeric" })})`;
+    shopifyOrderQuery = `created_at:>=${startBoundary.toISOString()} AND created_at:<=${endBoundary.toISOString()}`;
+  } else if (timeFilter === "7d") {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const startYmd = sevenDaysAgo.toLocaleDateString("en-CA", { timeZone });
+    startBoundary = getStartOfDayInTz(startYmd);
+    endBoundary = getEndOfDayInTz(todayYmd);
+    activeDateLabel = "Last 7 Days";
+    shopifyOrderQuery = `created_at:>=${startBoundary.toISOString()}`;
+  } else if (timeFilter === "30d") {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const startYmd = thirtyDaysAgo.toLocaleDateString("en-CA", { timeZone });
+    startBoundary = getStartOfDayInTz(startYmd);
+    endBoundary = getEndOfDayInTz(todayYmd);
+    activeDateLabel = "Last 30 Days";
+    shopifyOrderQuery = `created_at:>=${startBoundary.toISOString()}`;
+  } else if (timeFilter === "custom" && startDateStr) {
+    try {
+      startBoundary = getStartOfDayInTz(startDateStr);
+      endBoundary = endDateStr ? getEndOfDayInTz(endDateStr) : getEndOfDayInTz(startDateStr);
+      activeDateLabel = endDateStr && endDateStr !== startDateStr
+        ? `${startBoundary.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric" })} - ${endBoundary.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric", year: "numeric" })}`
+        : startBoundary.toLocaleDateString("en-US", { timeZone, month: "short", day: "numeric", year: "numeric" });
+      shopifyOrderQuery = `created_at:>=${startBoundary.toISOString()}`;
+    } catch {
+      startBoundary = null;
+      endBoundary = null;
+      activeDateLabel = "Custom Date";
+    }
+  } else if (timeFilter === "all") {
+    startBoundary = null;
+    endBoundary = null;
+    activeDateLabel = "All-Time";
+    shopifyOrderQuery = null;
+  }
+
+  return { startBoundary, endBoundary, activeDateLabel, shopifyOrderQuery };
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const isForceRefresh = url.searchParams.get("refresh") === "true";
@@ -30,70 +125,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shopDomain = "theunniyarcha.myshopify.com";
   let shopName = "Unniyarcha Fine Jewellery";
   let currency = "INR";
+  let storeTimezone = "Asia/Kolkata";
   let shopifyProducts: any[] = [];
   let shopifyCollections: any[] = [];
   let shopifyOrders: any[] = [];
 
-  // 1. Calculate exact date window boundaries
-  const now = new Date();
-  let startBoundary: Date | null = null;
-  let endBoundary: Date | null = null;
-  let activeDateLabel = "Today";
-
-  if (timeFilter === "today") {
-    startBoundary = new Date();
-    startBoundary.setHours(0, 0, 0, 0);
-    endBoundary = new Date();
-    endBoundary.setHours(23, 59, 59, 999);
-    activeDateLabel = `Today (${now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
-  } else if (timeFilter === "yesterday") {
-    startBoundary = new Date();
-    startBoundary.setDate(startBoundary.getDate() - 1);
-    startBoundary.setHours(0, 0, 0, 0);
-    endBoundary = new Date();
-    endBoundary.setDate(endBoundary.getDate() - 1);
-    endBoundary.setHours(23, 59, 59, 999);
-    activeDateLabel = `Yesterday (${startBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})`;
-  } else if (timeFilter === "7d") {
-    startBoundary = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-    startBoundary.setHours(0, 0, 0, 0);
-    endBoundary = new Date();
-    endBoundary.setHours(23, 59, 59, 999);
-    activeDateLabel = "Last 7 Days";
-  } else if (timeFilter === "30d") {
-    startBoundary = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-    startBoundary.setHours(0, 0, 0, 0);
-    endBoundary = new Date();
-    endBoundary.setHours(23, 59, 59, 999);
-    activeDateLabel = "Last 30 Days";
-  } else if (timeFilter === "custom" && startDate) {
-    try {
-      startBoundary = new Date(`${startDate}T00:00:00`);
-      endBoundary = endDate ? new Date(`${endDate}T23:59:59.999`) : new Date(`${startDate}T23:59:59.999`);
-      activeDateLabel = endDate && endDate !== startDate 
-        ? `${startBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${endBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-        : startBoundary.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    } catch {
-      startBoundary = null;
-      endBoundary = null;
-      activeDateLabel = "Custom Date";
-    }
-  } else if (timeFilter === "all") {
-    startBoundary = null;
-    endBoundary = null;
-    activeDateLabel = "All-Time";
-  }
-
   const cacheKey = `funnel_data_${shopDomain}_${timeFilter}_${startDate}_${endDate}`;
 
+  if (!isForceRefresh) {
+    const cached = appCache.get(cacheKey);
+    if (cached) return json(cached);
+  }
+
+  // Fetch shop details and GraphQL catalog + orders
   try {
     const { admin, session } = await authenticate.admin(request);
     if (session?.shop) shopDomain = session.shop;
-
-    if (!isForceRefresh) {
-      const cached = appCache.get(cacheKey);
-      if (cached) return json(cached);
-    }
 
     try {
       const response = await admin.graphql(`
@@ -146,69 +193,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               }
             }
           }
-          orders(first: 250, reverse: true, sortKey: CREATED_AT) {
-            edges {
-              node {
-                id
-                name
-                createdAt
-                displayFinancialStatus
-                totalPriceSet {
-                  shopMoney {
-                    amount
-                    currencyCode
-                  }
-                }
-                totalDiscountsSet {
-                  shopMoney {
-                    amount
-                  }
-                }
-                discountApplications(first: 5) {
-                  edges {
-                    node {
-                      targetType
-                      value {
-                        ... on MoneyV2 {
-                          amount
-                          currencyCode
-                        }
-                        ... on PricingPercentageValue {
-                          percentage
-                        }
-                      }
-                      ... on DiscountCodeApplication {
-                        code
-                      }
-                      ... on ManualDiscountApplication {
-                        title
-                      }
-                    }
-                  }
-                }
-                lineItems(first: 15) {
-                  edges {
-                    node {
-                      title
-                      quantity
-                      variant {
-                        id
-                        product {
-                          id
-                          title
-                        }
-                      }
-                      originalUnitPriceSet {
-                        shopMoney {
-                          amount
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
         }
       `);
 
@@ -219,6 +203,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         shopName = data.shop.name || "Unniyarcha Fine Jewellery";
         if (data.shop.myshopifyDomain) shopDomain = data.shop.myshopifyDomain;
         currency = data.shop.currencyCode || "INR";
+        if (data.shop.ianaTimezone) storeTimezone = data.shop.ianaTimezone;
       }
 
       if (data?.collections?.edges) {
@@ -228,17 +213,119 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       if (data?.products?.edges) {
         shopifyProducts = data.products.edges.map((e: any) => e.node);
       }
-
-      if (data?.orders?.edges) {
-        shopifyOrders = data.orders.edges.map((e: any) => e.node);
-      }
     } catch (graphErr) {
-      console.warn("Funnel GraphQL non-blocking warning:", graphErr);
+      console.warn("Funnel GraphQL catalog non-blocking warning:", graphErr);
+    }
+
+    // Compute boundaries using store timezone
+    const boundaries = getStoreTimezoneDateBoundaries(timeFilter, startDate, endDate, storeTimezone);
+
+    // Fetch Shopify Orders with pagination support
+    try {
+      let hasNextPage = true;
+      let cursor: string | null = null;
+      let pageCount = 0;
+
+      while (hasNextPage && pageCount < 4) {
+        pageCount++;
+        const ordersResponse = await admin.graphql(`
+          query GetOrders($queryStr: String, $cursor: String) {
+            orders(first: 250, reverse: true, sortKey: CREATED_AT, query: $queryStr, after: $cursor) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              edges {
+                node {
+                  id
+                  name
+                  createdAt
+                  displayFinancialStatus
+                  totalPriceSet {
+                    shopMoney {
+                      amount
+                      currencyCode
+                    }
+                  }
+                  totalDiscountsSet {
+                    shopMoney {
+                      amount
+                    }
+                  }
+                  discountApplications(first: 5) {
+                    edges {
+                      node {
+                        targetType
+                        value {
+                          ... on MoneyV2 {
+                            amount
+                            currencyCode
+                          }
+                          ... on PricingPercentageValue {
+                            percentage
+                          }
+                        }
+                        ... on DiscountCodeApplication {
+                          code
+                        }
+                        ... on ManualDiscountApplication {
+                          title
+                        }
+                      }
+                    }
+                  }
+                  lineItems(first: 15) {
+                    edges {
+                      node {
+                        title
+                        quantity
+                        variant {
+                          id
+                          product {
+                            id
+                            title
+                          }
+                        }
+                        originalUnitPriceSet {
+                          shopMoney {
+                            amount
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `, {
+          variables: {
+            queryStr: boundaries.shopifyOrderQuery,
+            cursor: cursor,
+          },
+        });
+
+        const ordersJson = await ordersResponse.json();
+        const ordersData = ordersJson.data?.orders;
+
+        if (ordersData?.edges) {
+          shopifyOrders.push(...ordersData.edges.map((e: any) => e.node));
+        }
+
+        hasNextPage = ordersData?.pageInfo?.hasNextPage || false;
+        cursor = ordersData?.pageInfo?.endCursor || null;
+        if (!cursor) break;
+      }
+    } catch (orderErr) {
+      console.warn("Funnel Orders GraphQL non-blocking warning:", orderErr);
     }
   } catch (err) {
     if (err instanceof Response) throw err;
     console.warn("Admin auth non-blocking:", err);
   }
+
+  // Calculate exact date window boundaries
+  const { startBoundary, endBoundary, activeDateLabel } = getStoreTimezoneDateBoundaries(timeFilter, startDate, endDate, storeTimezone);
 
   // 2. Exact SQL Date Where Clauses
   const eventWhere: any = {};
