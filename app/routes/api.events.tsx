@@ -167,10 +167,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }).catch((e) => console.warn("Auto-identity phone error:", e.message));
     }
 
+    // Maintain active storefront session (30-minute rolling session window)
+    let sessionIdToUse = session_id || null;
+    try {
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const activeSession = await prisma.storefrontSession.findFirst({
+        where: {
+          shopId,
+          visitorId: visitor_id,
+          lastActivityAt: { gte: thirtyMinutesAgo },
+        },
+        orderBy: { lastActivityAt: "desc" },
+      });
+
+      if (activeSession) {
+        sessionIdToUse = activeSession.id;
+        await prisma.storefrontSession.update({
+          where: { id: activeSession.id },
+          data: { lastActivityAt: eventTimestamp },
+        }).catch(() => {});
+      } else {
+        const newSession = await prisma.storefrontSession.create({
+          data: {
+            shopId,
+            visitorId: visitor_id,
+            startedAt: eventTimestamp,
+            lastActivityAt: eventTimestamp,
+            landingPage: page_url,
+            utmSource: metadata?.utm_source || metadata?.source || null,
+            utmMedium: metadata?.utm_medium || metadata?.medium || null,
+            utmCampaign: metadata?.utm_campaign || metadata?.campaign || null,
+          },
+        });
+        sessionIdToUse = newSession.id;
+      }
+    } catch (sErr) {
+      console.warn("Session tracking notice:", sErr);
+    }
+
     const event = await prisma.event.create({
       data: {
         shopId,
         visitorId: visitor_id,
+        sessionId: sessionIdToUse,
         eventType: event_type,
         timestamp: eventTimestamp,
         pageUrl: page_url,
